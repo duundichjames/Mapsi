@@ -11,11 +11,13 @@
 ### 1.1. 디렉토리별 자산
 
 - `templates/`, 정적 파일 세트(mimetype, META-INF, version.xml, Contents/header.xml) 의 완비
-- `samples/`, 10 개 레퍼런스 HWPX 와 unpacked 디렉토리
+- `samples/`, 10 개 레퍼런스 HWPX 와 unpacked 디렉토리, 그리고 각 HWPX 와 쌍을 이루는 10 개 마크다운 입력 예제(base.md, 01_headings.md 등)
 - `spec/extracted/styles.csv`, 각 샘플별 스타일 ID 매핑
 - `spec/references/`, 한/글 공식 스펙 문서 5 종
 - `spec/hnc_equation_spec.pdf`, 수식 변환용 참조 문서
 - `docs/project_plan.md`, 전체 프로젝트 계획
+
+각 샘플 폴더의 `NN_xxx.md` 는 변환기의 기대 입력이며, 같은 폴더의 `NN_xxx.hwpx` 는 그 입력이 생성해야 할 정답 출력이다. 각 md 파일 상단 YAML front matter 에 도입 요소, 스타일 매핑, 테스트 관점, 경계 조건이 명시되어 있어 B 가 별도 문서를 참조하지 않고도 테스트 케이스를 추출할 수 있다.
 
 ### 1.2. 확정된 스타일 ID 테이블
 
@@ -129,6 +131,25 @@ diff samples/incremental/04_blockquote_code/unpacked/Contents/section0.xml \
      samples/incremental/05_table/unpacked/Contents/section0.xml
 ```
 
+각 샘플 폴더에는 해당 증분이 도입하는 요소만을 담은 최소 md 입력 파일이 쌍으로 존재한다. B 의 TDD 루프는 다음 형태로 구성 가능하다.
+
+```python
+from pathlib import Path
+import subprocess
+
+샘플루트 = Path("samples/incremental")
+for 폴더 in sorted(샘플루트.iterdir()):
+    if not 폴더.is_dir():
+        continue
+    md파일 = 폴더 / f"{폴더.name}.md"
+    정답파일 = 폴더 / f"{폴더.name}.hwpx"
+    출력파일 = Path(f"/tmp/{폴더.name}_out.hwpx")
+    subprocess.run(["mapsi", str(md파일), "-o", str(출력파일)], check=True)
+    # 비교, section0.xml 의 styleIDRef 시퀀스 일치 여부
+```
+
+초기 단계에는 styleIDRef 시퀀스 비교만으로 충분하며, 후반에 텍스트 내용과 특수 요소(tbl, pic, equation) 의 존재 여부까지 확장하면 된다.
+
 ### 3.5. ID 하드코딩 금지
 
 - 빌더 코드 내의 ID 숫자 직접 사용 금지
@@ -183,18 +204,30 @@ C 가 먼저 구현해야 B 가 통합 가능한 함수들.
 - 비교 방식, lxml 의 C14N 정규화 후 의미적 동일성 판정
 - 담당, C(픽스처 작성) 및 B(빌더 정확성 보장)
 
-### 5.4. 자동 번호매김 미사용 원칙
+### 5.4. 순서 목록의 번호 보존 원칙
 
 - 한/글의 문단 자동 번호매김 기능은 순서 있는 목록(번호1/2/3) 에서 사용하지 않음
 - 이유, 개요 1 - 6 의 번호 체계와의 카운터 간섭 회피
 - 대응, 마크다운 원문의 "1. ", "2. " 등의 번호 텍스트를 hp:t 에 그대로 보존
 - 번호1/2/3 스타일의 역할, 깊이별 들여쓰기만 제공
+- 결과, md 원문이 "1. / 1. / 1." 이면 세 항목 모두 "1." 로 출력되고, "1. / 2. / 3." 이면 그대로 출력됨
+
+### 5.5. 표/그림 캡션의 접두사 제거 원칙
+
+- 순서 목록의 번호 보존 원칙과 방향이 반대임. 혼동 주의
+- 변환기가 표 직전 또는 그림 직후의 단락이 정규식 "^(표|Table|그림|Figure)\s+\d+\.\s*" 로 시작하면 캡션으로 승격
+- 승격 시 접두사("표 N. ", "그림 N. " 등) 를 파싱 후 제거하고 뒤쪽 본문만 캡션 슬롯에 저장
+  예시, "표 1. 주요 재정 융자 사업 비교" → 캡션 텍스트는 "주요 재정 융자 사업 비교"
+- 번호 자리는 한/글의 autoNum 에 위임하며 변환기는 번호를 기록하지 않음
+- 사용자가 md 에서 쓴 번호 값은 무시됨. 한/글이 문서 내 표/그림 등장 순서대로 1, 2, 3... 재부여
+- 두 원칙의 근거 차이, hwpx 의 표와 그림은 autoNum 메커니즘을 기본 제공하는 반면 번호1/2/3 스타일에는 자동 번호 메커니즘이 없음. 따라서 전자는 위임하고 후자는 원문에 책임을 둠
 
 ---
 
 ## 6. 작업 개시 체크리스트
 
 - [ ] `samples/incremental/09_equations/unpacked/Contents/` 아래의 section0.xml 및 header.xml 관찰
+- [ ] `samples/base/base.md` 와 `samples/incremental/*/*.md` 파일 10 개의 front matter 숙지
 - [ ] `spec/extracted/styles.csv` 의 09_equations 행 숙지
 - [ ] `docs/project_plan.md` 의 "모듈 구조" 및 "인터페이스 계약" 섹션 정독
 - [ ] Python 3.11 환경 구축 및 markdown-it-py, lxml, pyyaml 설치
