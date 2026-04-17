@@ -1,0 +1,10 @@
+마크다운의 “# 참고문헌” 또는 “# References” 제목으로 시작하는 섹션 아래의 모든 단락을 "참고문헌" 스타일로 매핑함. 
+
+문단 번호/글머리표는 "없음" 으로 명시하여 다른 스타일의 번호 체계 영향을 받지 않도록 함.
+
+참고 문헌
+Areche, Franklin Ore, Juan Alberto Julcahuanga Dominguez, Jovencio Ticsihua Huaman, Rafael Julian Malpartida Yapias, Tania Jakeline Choque Rivera, and Luz Delia Mamani Perales. 2024. “Maximizing the Potential of Marine Resources: A Sustainable Approach to High-Value Product Development from Seafood By-Products and Waste.” Current Research in Nutrition and Food Science Journal 12 (3): 1062–80.
+Aslesen, Heidi Wiig. 2009. “The Innovation System of Norwegian Aquacultured Salmonids.” Fagerberg Et Al, Innovation, 208–34.
+Borriello, Antonio, Angel Calvo Santos, Laia Codina López, Luc Feyen, Nathan Gaborieau, Rafael Garaffa, Michela Ghiani, et al. 2024. “The EU Blue Economy Report 2024.”
+Brye, K. 2023. “Aquaculture: A Sustainable Solution for Fish Cultivation and Global Food Security.” Journal of Agriculture 6 (4): 91–93.
+Carpenter, Robert E, and Bruce C Petersen. 2002. “C

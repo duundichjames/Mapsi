@@ -1,0 +1,304 @@
+sample,id,name,engName,type,paraPrIDRef,charPrIDRef
+base,0,바탕글,Normal,PARA,18,5
+base,1,본문,Body,PARA,19,5
+base,2,개요 1,Outline 1,PARA,0,0
+base,3,개요 2,Outline 2,PARA,1,0
+base,4,개요 3,Outline 3,PARA,2,0
+base,5,개요 4,Outline 4,PARA,3,0
+base,6,개요 5,Outline 5,PARA,4,0
+base,7,개요 6,Outline 6,PARA,5,0
+base,8,개요 7,Outline 7,PARA,6,0
+base,9,개요 8,Outline 8,PARA,16,0
+base,10,개요 9,Outline 9,PARA,14,0
+base,11,개요 10,Outline 10,PARA,15,0
+base,12,쪽 번호,Page Number,CHAR,0,6
+base,13,머리말,Header,PARA,7,1
+base,14,각주,Footnote,PARA,8,2
+base,15,미주,Endnote,PARA,8,2
+base,16,메모,Memo,PARA,9,8
+base,17,차례 제목,TOC Heading,PARA,10,3
+base,18,차례 1,TOC 1,PARA,11,4
+base,19,차례 2,TOC 2,PARA,12,4
+base,20,차례 3,TOC 3,PARA,13,4
+base,21,캡션,Caption,PARA,17,0
+01_headings,0,바탕글,Normal,PARA,13,5
+01_headings,1,본문,Body,PARA,14,5
+01_headings,2,개요 1,Outline 1,PARA,15,9
+01_headings,3,개요 2,Outline 2,PARA,17,10
+01_headings,4,개요 3,Outline 3,PARA,18,10
+01_headings,5,개요 4,Outline 4,PARA,19,11
+01_headings,6,개요 5,Outline 5,PARA,20,12
+01_headings,7,개요 6,Outline 6,PARA,0,0
+01_headings,8,개요 7,Outline 7,PARA,1,0
+01_headings,9,개요 8,Outline 8,PARA,11,0
+01_headings,10,개요 9,Outline 9,PARA,9,0
+01_headings,11,개요 10,Outline 10,PARA,10,0
+01_headings,12,쪽 번호,Page Number,CHAR,0,6
+01_headings,13,머리말,Header,PARA,2,1
+01_headings,14,각주,Footnote,PARA,3,2
+01_headings,15,미주,Endnote,PARA,3,2
+01_headings,16,메모,Memo,PARA,4,8
+01_headings,17,차례 제목,TOC Heading,PARA,5,3
+01_headings,18,차례 1,TOC 1,PARA,6,4
+01_headings,19,차례 2,TOC 2,PARA,7,4
+01_headings,20,차례 3,TOC 3,PARA,8,4
+01_headings,21,캡션,Caption,PARA,12,0
+02_bullet_list,0,바탕글,Normal,PARA,13,5
+02_bullet_list,1,본문,Body,PARA,14,5
+02_bullet_list,2,개요 1,Outline 1,PARA,15,9
+02_bullet_list,3,개요 2,Outline 2,PARA,17,10
+02_bullet_list,4,개요 3,Outline 3,PARA,18,10
+02_bullet_list,5,개요 4,Outline 4,PARA,19,11
+02_bullet_list,6,네모,,PARA,22,13
+02_bullet_list,7,동그라미,,PARA,23,13
+02_bullet_list,8,줄,,PARA,24,13
+02_bullet_list,9,개요 5,Outline 5,PARA,20,12
+02_bullet_list,10,개요 6,Outline 6,PARA,0,0
+02_bullet_list,11,개요 7,Outline 7,PARA,1,0
+02_bullet_list,12,개요 8,Outline 8,PARA,11,0
+02_bullet_list,13,개요 9,Outline 9,PARA,9,0
+02_bullet_list,14,개요 10,Outline 10,PARA,10,0
+02_bullet_list,15,쪽 번호,Page Number,CHAR,0,6
+02_bullet_list,16,머리말,Header,PARA,2,1
+02_bullet_list,17,각주,Footnote,PARA,3,2
+02_bullet_list,18,미주,Endnote,PARA,3,2
+02_bullet_list,19,메모,Memo,PARA,4,8
+02_bullet_list,20,차례 제목,TOC Heading,PARA,5,3
+02_bullet_list,21,차례 1,TOC 1,PARA,6,4
+02_bullet_list,22,차례 2,TOC 2,PARA,7,4
+02_bullet_list,23,차례 3,TOC 3,PARA,8,4
+02_bullet_list,24,캡션,Caption,PARA,12,0
+03_ordered_list,0,바탕글,Normal,PARA,13,6
+03_ordered_list,1,본문,Body,PARA,14,6
+03_ordered_list,2,개요 1,Outline 1,PARA,15,10
+03_ordered_list,3,개요 2,Outline 2,PARA,17,11
+03_ordered_list,4,개요 3,Outline 3,PARA,18,11
+03_ordered_list,5,개요 4,Outline 4,PARA,19,12
+03_ordered_list,6,번호1,,PARA,26,6
+03_ordered_list,7,번호2,,PARA,27,6
+03_ordered_list,8,번호3,,PARA,28,6
+03_ordered_list,9,네모,,PARA,22,14
+03_ordered_list,10,동그라미,,PARA,23,14
+03_ordered_list,11,줄,,PARA,24,14
+03_ordered_list,12,개요 5,Outline 5,PARA,20,13
+03_ordered_list,13,개요 6,Outline 6,PARA,0,0
+03_ordered_list,14,개요 7,Outline 7,PARA,1,0
+03_ordered_list,15,개요 8,Outline 8,PARA,11,0
+03_ordered_list,16,개요 9,Outline 9,PARA,9,0
+03_ordered_list,17,개요 10,Outline 10,PARA,10,0
+03_ordered_list,18,쪽 번호,Page Number,CHAR,0,7
+03_ordered_list,19,머리말,Header,PARA,2,2
+03_ordered_list,20,각주,Footnote,PARA,3,3
+03_ordered_list,21,미주,Endnote,PARA,3,3
+03_ordered_list,22,메모,Memo,PARA,4,9
+03_ordered_list,23,차례 제목,TOC Heading,PARA,5,4
+03_ordered_list,24,차례 1,TOC 1,PARA,6,5
+03_ordered_list,25,차례 2,TOC 2,PARA,7,5
+03_ordered_list,26,차례 3,TOC 3,PARA,8,5
+03_ordered_list,27,캡션,Caption,PARA,12,0
+04_blockquote_code,0,바탕글,Normal,PARA,13,7
+04_blockquote_code,1,본문,Body,PARA,14,7
+04_blockquote_code,2,개요 1,Outline 1,PARA,16,11
+04_blockquote_code,3,개요 2,Outline 2,PARA,18,12
+04_blockquote_code,4,개요 3,Outline 3,PARA,19,12
+04_blockquote_code,5,개요 4,Outline 4,PARA,20,13
+04_blockquote_code,6,인용,,PARA,31,1
+04_blockquote_code,7,코드,,PARA,15,4
+04_blockquote_code,8,번호1,,PARA,27,7
+04_blockquote_code,9,번호2,,PARA,28,7
+04_blockquote_code,10,번호3,,PARA,29,7
+04_blockquote_code,11,네모,,PARA,23,15
+04_blockquote_code,12,동그라미,,PARA,24,15
+04_blockquote_code,13,줄,,PARA,25,15
+04_blockquote_code,14,개요 5,Outline 5,PARA,21,14
+04_blockquote_code,15,개요 6,Outline 6,PARA,0,0
+04_blockquote_code,16,개요 7,Outline 7,PARA,1,0
+04_blockquote_code,17,개요 8,Outline 8,PARA,11,0
+04_blockquote_code,18,개요 9,Outline 9,PARA,9,0
+04_blockquote_code,19,개요 10,Outline 10,PARA,10,0
+04_blockquote_code,20,쪽 번호,Page Number,CHAR,0,8
+04_blockquote_code,21,머리말,Header,PARA,2,2
+04_blockquote_code,22,각주,Footnote,PARA,3,3
+04_blockquote_code,23,미주,Endnote,PARA,3,3
+04_blockquote_code,24,메모,Memo,PARA,4,10
+04_blockquote_code,25,차례 제목,TOC Heading,PARA,5,5
+04_blockquote_code,26,차례 1,TOC 1,PARA,6,6
+04_blockquote_code,27,차례 2,TOC 2,PARA,7,6
+04_blockquote_code,28,차례 3,TOC 3,PARA,8,6
+04_blockquote_code,29,캡션,Caption,PARA,12,0
+05_table,0,바탕글,Normal,PARA,2,1
+05_table,1,본문,Body,PARA,16,1
+05_table,2,개요 1,Outline 1,PARA,17,10
+05_table,3,개요 2,Outline 2,PARA,19,11
+05_table,4,개요 3,Outline 3,PARA,20,11
+05_table,5,개요 4,Outline 4,PARA,21,12
+05_table,6,인용,,PARA,30,1
+05_table,7,코드,,PARA,2,4
+05_table,8,번호1,,PARA,27,1
+05_table,9,표캡션,,PARA,2,1
+05_table,10,번호2,,PARA,28,1
+05_table,11,번호3,,PARA,29,1
+05_table,12,네모,,PARA,24,14
+05_table,13,동그라미,,PARA,25,14
+05_table,14,줄,,PARA,26,14
+05_table,15,개요 5,Outline 5,PARA,22,13
+05_table,16,개요 6,Outline 6,PARA,3,0
+05_table,17,개요 7,Outline 7,PARA,4,0
+05_table,18,개요 8,Outline 8,PARA,14,0
+05_table,19,개요 9,Outline 9,PARA,12,0
+05_table,20,개요 10,Outline 10,PARA,13,0
+05_table,21,쪽 번호,Page Number,CHAR,0,7
+05_table,22,머리말,Header,PARA,5,2
+05_table,23,각주,Footnote,PARA,6,3
+05_table,24,미주,Endnote,PARA,6,3
+05_table,25,메모,Memo,PARA,7,9
+05_table,26,차례 제목,TOC Heading,PARA,8,5
+05_table,27,차례 1,TOC 1,PARA,9,6
+05_table,28,차례 2,TOC 2,PARA,10,6
+05_table,29,차례 3,TOC 3,PARA,11,6
+05_table,30,캡션,Caption,PARA,15,0
+05_table,31,표내용,,PARA,0,15
+06_figure,0,바탕글,Normal,PARA,17,7
+06_figure,1,그림캡션,,PARA,30,1
+06_figure,2,그림,,PARA,28,1
+06_figure,3,본문,Body,PARA,18,7
+06_figure,4,개요 1,Outline 1,PARA,20,11
+06_figure,5,개요 2,Outline 2,PARA,22,12
+06_figure,6,개요 3,Outline 3,PARA,23,12
+06_figure,7,개요 4,Outline 4,PARA,24,13
+06_figure,8,인용,,PARA,39,1
+06_figure,9,코드,,PARA,19,4
+06_figure,10,번호1,,PARA,35,7
+06_figure,11,표캡션,,PARA,2,1
+06_figure,12,번호2,,PARA,36,7
+06_figure,13,번호3,,PARA,37,7
+06_figure,14,네모,,PARA,31,15
+06_figure,15,동그라미,,PARA,32,15
+06_figure,16,줄,,PARA,33,15
+06_figure,17,개요 5,Outline 5,PARA,25,14
+06_figure,18,개요 6,Outline 6,PARA,4,0
+06_figure,19,개요 7,Outline 7,PARA,5,0
+06_figure,20,개요 8,Outline 8,PARA,15,0
+06_figure,21,개요 9,Outline 9,PARA,13,0
+06_figure,22,개요 10,Outline 10,PARA,14,0
+06_figure,23,쪽 번호,Page Number,CHAR,0,8
+06_figure,24,머리말,Header,PARA,6,2
+06_figure,25,각주,Footnote,PARA,7,3
+06_figure,26,미주,Endnote,PARA,7,3
+06_figure,27,메모,Memo,PARA,8,10
+06_figure,28,차례 제목,TOC Heading,PARA,9,5
+06_figure,29,차례 1,TOC 1,PARA,10,6
+06_figure,30,차례 2,TOC 2,PARA,11,6
+06_figure,31,차례 3,TOC 3,PARA,12,6
+06_figure,32,캡션,Caption,PARA,16,0
+06_figure,33,표내용,,PARA,0,16
+06_figure,34,FigureCaption,,PARA,3,18
+07_footnote,0,바탕글,Normal,PARA,17,7
+07_footnote,1,그림캡션,,PARA,30,1
+07_footnote,2,그림,,PARA,28,1
+07_footnote,3,본문,Body,PARA,18,7
+07_footnote,4,개요 1,Outline 1,PARA,20,12
+07_footnote,5,개요 2,Outline 2,PARA,22,13
+07_footnote,6,개요 3,Outline 3,PARA,23,13
+07_footnote,7,개요 4,Outline 4,PARA,24,14
+07_footnote,8,인용,,PARA,39,1
+07_footnote,9,코드,,PARA,19,4
+07_footnote,10,번호1,,PARA,35,7
+07_footnote,11,표캡션,,PARA,2,1
+07_footnote,12,번호2,,PARA,36,7
+07_footnote,13,번호3,,PARA,37,7
+07_footnote,14,네모,,PARA,31,16
+07_footnote,15,동그라미,,PARA,32,16
+07_footnote,16,줄,,PARA,33,16
+07_footnote,17,개요 5,Outline 5,PARA,25,15
+07_footnote,18,개요 6,Outline 6,PARA,4,0
+07_footnote,19,개요 7,Outline 7,PARA,5,0
+07_footnote,20,개요 8,Outline 8,PARA,15,0
+07_footnote,21,개요 9,Outline 9,PARA,13,0
+07_footnote,22,개요 10,Outline 10,PARA,14,0
+07_footnote,23,쪽 번호,Page Number,CHAR,0,8
+07_footnote,24,머리말,Header,PARA,6,2
+07_footnote,25,각주,Footnote,PARA,7,10
+07_footnote,26,미주,Endnote,PARA,7,3
+07_footnote,27,메모,Memo,PARA,8,11
+07_footnote,28,차례 제목,TOC Heading,PARA,9,5
+07_footnote,29,차례 1,TOC 1,PARA,10,6
+07_footnote,30,차례 2,TOC 2,PARA,11,6
+07_footnote,31,차례 3,TOC 3,PARA,12,6
+07_footnote,32,캡션,Caption,PARA,16,0
+07_footnote,33,표내용,,PARA,0,17
+07_footnote,34,FigureCaption,,PARA,3,19
+08_references,0,바탕글,Normal,PARA,17,7
+08_references,1,그림캡션,,PARA,30,1
+08_references,2,그림,,PARA,28,1
+08_references,3,본문,Body,PARA,18,7
+08_references,4,개요 1,Outline 1,PARA,20,12
+08_references,5,개요 2,Outline 2,PARA,22,13
+08_references,6,개요 3,Outline 3,PARA,23,13
+08_references,7,개요 4,Outline 4,PARA,24,14
+08_references,8,인용,,PARA,40,1
+08_references,9,코드,,PARA,19,4
+08_references,10,번호1,,PARA,36,7
+08_references,11,표캡션,,PARA,2,1
+08_references,12,번호2,,PARA,37,7
+08_references,13,번호3,,PARA,38,7
+08_references,14,네모,,PARA,31,16
+08_references,15,동그라미,,PARA,32,16
+08_references,16,줄,,PARA,33,16
+08_references,17,개요 5,Outline 5,PARA,25,15
+08_references,18,개요 6,Outline 6,PARA,4,0
+08_references,19,개요 7,Outline 7,PARA,5,0
+08_references,20,개요 8,Outline 8,PARA,15,0
+08_references,21,개요 9,Outline 9,PARA,13,0
+08_references,22,개요 10,Outline 10,PARA,14,0
+08_references,23,쪽 번호,Page Number,CHAR,0,8
+08_references,24,머리말,Header,PARA,6,2
+08_references,25,각주,Footnote,PARA,7,10
+08_references,26,미주,Endnote,PARA,7,3
+08_references,27,메모,Memo,PARA,8,11
+08_references,28,차례 제목,TOC Heading,PARA,9,5
+08_references,29,차례 1,TOC 1,PARA,10,6
+08_references,30,차례 2,TOC 2,PARA,11,6
+08_references,31,차례 3,TOC 3,PARA,12,6
+08_references,32,캡션,Caption,PARA,16,0
+08_references,33,표내용,,PARA,0,17
+08_references,34,FigureCaption,,PARA,3,19
+08_references,35,제목 1,,PARA,43,23
+08_references,36,참고문헌,,PARA,42,24
+09_equations,0,바탕글,Normal,PARA,17,7
+09_equations,1,그림캡션,,PARA,30,1
+09_equations,2,그림,,PARA,28,1
+09_equations,3,본문,Body,PARA,18,7
+09_equations,4,개요 1,Outline 1,PARA,20,12
+09_equations,5,개요 2,Outline 2,PARA,22,13
+09_equations,6,개요 3,Outline 3,PARA,23,13
+09_equations,7,개요 4,Outline 4,PARA,24,14
+09_equations,8,인용,,PARA,40,1
+09_equations,9,코드,,PARA,19,4
+09_equations,10,번호1,,PARA,36,7
+09_equations,11,표캡션,,PARA,2,1
+09_equations,12,번호2,,PARA,37,7
+09_equations,13,번호3,,PARA,38,7
+09_equations,14,네모,,PARA,31,16
+09_equations,15,동그라미,,PARA,32,16
+09_equations,16,줄,,PARA,33,16
+09_equations,17,개요 5,Outline 5,PARA,25,15
+09_equations,18,개요 6,Outline 6,PARA,4,0
+09_equations,19,개요 7,Outline 7,PARA,5,0
+09_equations,20,개요 8,Outline 8,PARA,15,0
+09_equations,21,개요 9,Outline 9,PARA,13,0
+09_equations,22,개요 10,Outline 10,PARA,14,0
+09_equations,23,쪽 번호,Page Number,CHAR,0,8
+09_equations,24,머리말,Header,PARA,6,2
+09_equations,25,각주,Footnote,PARA,7,10
+09_equations,26,미주,Endnote,PARA,7,3
+09_equations,27,메모,Memo,PARA,8,11
+09_equations,28,차례 제목,TOC Heading,PARA,9,5
+09_equations,29,차례 1,TOC 1,PARA,10,6
+09_equations,30,차례 2,TOC 2,PARA,11,6
+09_equations,31,차례 3,TOC 3,PARA,12,6
+09_equations,32,캡션,Caption,PARA,16,0
+09_equations,33,표내용,,PARA,0,17
+09_equations,34,FigureCaption,,PARA,3,19
+09_equations,35,제목 1,,PARA,44,23
+09_equations,36,참고문헌,,PARA,42,24

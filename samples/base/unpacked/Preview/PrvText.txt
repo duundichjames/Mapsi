@@ -1,0 +1,19 @@
+바탕글과 본문 스타일, 쪽번호, 메모 스타일 등 총 4개
+본문 스타일
+
+쪽번호는 마크다운에 쪽번호라는 개념이 없으므로 입력에서 가져올 정보가 없고, 쪽번호는 base.hwpx 템플릿이 이미 제공한 설정을 그대로 상속. 아래 section0.xml 의 섹션 속성(hp:secPr) 블록 과 같은 형태로 base.hwpx 에 기록되어 있으며, 변환기는 본문 요소(hp:p, hp:tbl, hp:pic 등) 만 교체하고 이 secPr 블록은 그대로 보존함으로써 쪽번호, 용지, 여백, 각주 설정 등 문서 전역 속성이 변환 과정에서 유지 됨.
+
+<hp:secPr ...>
+  <hp:pagePr landscape="NARROWLY" width="59528" height="84188"
+             gutterType="LEFT_ONLY">
+    <hp:margin header="4252" footer="4252"
+               left="8504" right="8504"
+               top="5668" bottom="4252"/>
+  </hp:pagePr>
+  <hp:footNotePr>...</hp:footNotePr>
+  <hp:pageBorderFill>...</hp:pageBorderFill>
+  ...
+</hp:secPr>
+
+hwpx의 기본 서체는 한글은 “한글바탕”, 영문은 “Times New Roman”을 따름
+메모 서식도 이에 준함.아래 구조는 변환기 템플릿과 회귀 테스트의 원천이 될 레퍼런스 HWPX 샘플 저장소임. 회귀 테스트는 pytest 가 각 마크다운을 변환기에 통과시켜 나온 결과를 기대 HWPX 와 XML 단위로 비교하는 방식으로 수행됨. 각 증분 단계의 샘플 문서는 증분(incremental) 형태로 구성되며, 이전 단계와 비교하면 HWPX 의 어떤 XML 요소와 스타일 정의가 해당 마크다운 요소의 추가로 인해 영향을 받는지 정확히 식별할 수 있음. 각 샘플 디렉토리는 단일 파일 형태(NN_xxx.hwpx) 와 압축 
