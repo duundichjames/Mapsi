@@ -19,3 +19,8 @@ mapsi input.md -o output.hwpx
 MIT License
 
 자세한 프로젝트 계획은 docs/project_plan.md 를 참조한다.
+
+## 개발자 문서
+
+- [프로젝트 전체 계획](docs/project_plan.md)
+- [개발자 핸드오프 문서](docs/developer_handoff.md)
