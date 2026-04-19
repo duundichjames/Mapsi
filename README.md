@@ -8,9 +8,18 @@ Markdown Adapter for Paragraph-Style Injection
 
 ## 설치
 
+목적에 따라 둘 중 하나를 선택한다.
+
 ```bash
+# 변환기만 사용 (런타임 의존성만 설치: markdown-it-py, lxml, pyyaml)
+pip install -e .
+
+# 개발 / 테스트까지 (위 + pytest, pytest-cov 추가 설치)
 pip install -e ".[dev]"
 ```
+
+`.[dev]` 의 대괄호는 `pyproject.toml` 의 `optional-dependencies.dev`
+묶음을 가리킨다. zsh 에서는 글로빙 충돌을 막기 위해 따옴표가 필요하다.
 
 ## 사용
 
@@ -88,6 +97,7 @@ pytest tests/test_golden.py -v  # 골든 회귀만
 ## 라이선스
 
 MIT License
+자세한 프로젝트 계획은 docs/project_plan.md 를 참조한다.
 
 ## 개발자 문서
 
