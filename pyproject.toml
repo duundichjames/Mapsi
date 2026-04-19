@@ -27,10 +27,10 @@ dependencies = [
     "markdown-it-py>=3.0",
     "lxml>=5.0",
     "pyyaml>=6.0",
+    "Pillow>=10.0",
 ]
 
 [project.optional-dependencies]
-image = ["Pillow>=10.0"]
 llm = [
     "anthropic>=0.34",
     "openai>=1.40",

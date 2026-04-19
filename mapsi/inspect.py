@@ -77,22 +77,39 @@ def extract_style_id_to_name(header_xml: bytes) -> dict[str, str]:
 def _extract_paragraph_text(p_element: etree._Element) -> str:
     """``hp:p`` 1 개에서 *자기 자신의* 본문 텍스트만 결합한다.
 
-    ``hp:run > hp:t`` 노드들의 텍스트를 순서대로 이어 붙인다. 단, 표
-    (``hp:tbl``) 안에 있는 후손 ``hp:t`` 는 별도 ``hp:p`` 로 따로 열거되므로
-    이 함수에서는 제외한다 (이중 카운트 방지).
+    ``hp:run > hp:t`` 노드들의 텍스트를 순서대로 이어 붙인다. 단, 다음
+    경계 안의 후손 ``hp:t`` 는 *별도 ``hp:p`` 로 따로 열거되므로* 이중
+    카운트 방지를 위해 제외한다:
 
-    구체적으로 ``hp:tbl`` 자손인 ``hp:t`` 는 건너뛴다. 이 검사를 위해
-    ``getparent()`` 체인을 ``p_element`` 까지 거슬러 올라가며 ``hp:tbl``
-    경계를 만나는지 확인한다.
+    - ``hp:tbl``: 표 셀 안의 단락
+    - ``hp:pic``: 그림 캡션 (``hp:pic > hp:caption > hp:subList > hp:p``)
+
+    그림 단락 (``hp:pic`` 가 직접 자손에 있음) 은 본체에 텍스트가 없으므로
+    검증 가시성을 위해 ``hp:pic > hp:shapeComment`` (대체 텍스트) 를 합성
+    텍스트로 반환한다. shapeComment 가 비어 있으면 ``"[그림]"`` 자리표시.
     """
+    pic_tag = f"{{{HWPML_PARA_NS}}}pic"
     tbl_tag = f"{{{HWPML_PARA_NS}}}tbl"
     parts: list[str] = []
+    has_pic = False
     for t_node in p_element.iter(f"{{{HWPML_PARA_NS}}}t"):
         if not t_node.text:
             continue
         if _is_descendant_of_tag(t_node, p_element, tbl_tag):
             continue
+        if _is_descendant_of_tag(t_node, p_element, pic_tag):
+            continue
         parts.append(t_node.text)
+    if not parts:
+        # hp:pic 직속 자손이 있으면 alt 텍스트 (shapeComment) 를 노출.
+        for pic in p_element.iter(pic_tag):
+            has_pic = True
+            comment = pic.find(f"{{{HWPML_PARA_NS}}}shapeComment")
+            if comment is not None and comment.text:
+                return comment.text
+            break
+        if has_pic:
+            return "[그림]"
     return "".join(parts)
 
 

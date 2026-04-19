@@ -33,6 +33,7 @@ def md_to_hwpx(
     """
     from .ast_walker import walk
     from .builder.header import parse_style_table
+    from .builder.manifest import update_manifest
     from .builder.section import build_section
     from .packager import package_hwpx
     from .parser import parse_markdown
@@ -51,12 +52,84 @@ def md_to_hwpx(
     blocks = parse_markdown(md_path)
     walked = walk(blocks)
 
+    image_map, manifest_entries = _register_figure_images(
+        walked, md_path.parent, work_dir
+    )
+    if manifest_entries:
+        update_manifest(
+            work_dir / "Contents" / "content.hpf", manifest_entries
+        )
+
     header_bytes = (work_dir / "Contents" / "header.xml").read_bytes()
     style_table = parse_style_table(header_bytes)
-    section_xml = build_section(walked, style_map, style_table, base_section)
+    section_xml = build_section(
+        walked, style_map, style_table, base_section, image_map=image_map
+    )
     (work_dir / "Contents" / "section0.xml").write_bytes(section_xml)
 
     package_hwpx(str(work_dir), str(output_path))
+
+
+# pixel → HWPUNIT 환산 (한/글 표준: 1 inch = 7200 HWPUNIT). PNG 의 DPI
+# 정보가 없으면 96 dpi 가정.
+_DEFAULT_DPI = 96.0
+_HWPUNIT_PER_INCH = 7200.0
+
+
+def _register_figure_images(
+    blocks: list,
+    md_dir: Path,
+    work_dir: Path,
+) -> tuple[dict[str, dict], list[dict]]:
+    """walked Block 리스트에서 ``role="figure"`` 들의 이미지를 등록한다.
+
+    같은 ``src`` 가 여러 figure 에서 참조되면 한 번만 BinData 에 복사하고
+    동일 ``binary_item_id`` 를 공유한다.
+
+    Returns
+    -------
+    (image_map, manifest_entries)
+        - ``image_map``: ``src`` 문자열 → ``{"binary_item_id",
+          "width_hwpunit", "height_hwpunit"}``. ``build_section`` 이
+          ``build_figure_paragraph`` 에 넘긴다.
+        - ``manifest_entries``: ``update_manifest`` 에 그대로 전달.
+
+    Raises
+    ------
+    FileNotFoundError
+        figure 의 ``src`` 가 ``md_dir`` 기준으로 존재하지 않을 때.
+    """
+    from PIL import Image
+
+    from .builder.bindata import register_image
+
+    image_map: dict[str, dict] = {}
+    entries: list[dict] = []
+    for blk in blocks:
+        if getattr(blk, "role", None) != "figure":
+            continue
+        src = blk.meta.get("src") if blk.meta else None
+        if not src or src in image_map:
+            continue
+        resolved = (md_dir / src).resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(
+                f"figure 원본을 찾을 수 없음: {resolved} "
+                f"(md='{md_dir}', src='{src}')"
+            )
+        with Image.open(resolved) as img:
+            width_px, height_px = img.size
+            dpi_x, dpi_y = img.info.get("dpi", (_DEFAULT_DPI, _DEFAULT_DPI))
+        item_id, entry = register_image(resolved, work_dir)
+        image_map[src] = {
+            "binary_item_id": item_id,
+            "width_hwpunit": int(round(width_px * _HWPUNIT_PER_INCH / dpi_x)),
+            "height_hwpunit": int(
+                round(height_px * _HWPUNIT_PER_INCH / dpi_y)
+            ),
+        }
+        entries.append(entry)
+    return image_map, entries
 
 
 def _bootstrap_workdir(work_dir: Path) -> None:

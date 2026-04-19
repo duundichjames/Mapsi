@@ -8,28 +8,29 @@
     - build_run: hp:run (인라인 서식 그룹) -- 후속
     - build_text_run: hp:run + hp:t (평문) -- 구현 완료 (private 헬퍼)
     - build_table_wrapper: hp:p > hp:run > hp:tbl (표 + 캡션) -- 구현 완료
-    - build_figure_paragraph: hp:p (그림 자리표시 + 알트 텍스트) -- Phase 6a
-    - build_figure_caption_paragraph: hp:p (그림캡션 + autoNum) -- Phase 6a
-    - build_picture: hp:pic (실제 그림 노드) -- Phase 6b 에서 구현
+    - build_figure_paragraph: hp:p (이미지 ID 가 있으면 hp:pic 포함) -- Phase 6b
+    - build_figure_caption_paragraph: hp:p (그림캡션 + autoNum) -- 사용 안 함
+      (Phase 6a 의 자리표시였으며 6b 에서 캡션은 hp:pic 내부로 이동.
+      외부 테스트 호환을 위해 함수 자체는 보존)
+    - build_picture: hp:pic 노드 (private 헬퍼 _build_pic 가 본체) -- Phase 6b
     - build_footnote_ref: hp:footnoteRef (각주 참조) -- 후속
 
-Phase 6a / 6b 분리 메모
------------------------
+그림 emit 방식 (Phase 6b)
+-------------------------
 
-Phase 6a 에서는 그림을 ``그림`` 스타일의 빈 단락 (``hp:p``) 으로만 emit
-한다. 실제 이미지 바이너리 임베드와 ``hp:pic`` XML 작성은 Phase 6b 의
-범위이며, 이 때 다음과 같이 변경된다:
+``build_figure_paragraph`` 는 ``image_info`` 인자를 받는다.
 
-1. ``build_figure_paragraph`` 가 빈 단락 대신 ``hp:run`` 안에 ``hp:pic``
-   요소를 끼워 emit (``binaryItemIDRef`` 로 BinData 참조).
-2. ``build_figure_caption_paragraph`` 는 폐기되고, 캡션은 ``hp:pic`` 내부의
-   ``hp:caption`` 으로 흡수 (표와 동일한 패턴, 단 ``numType="PICTURE"``).
-3. ``section.build_section`` 의 figure dispatch 가 단일 ``hp:p`` (그림 +
-   캡션 모두 내부) 만 추가하도록 단순화.
+- ``image_info=None`` → Phase 6a 호환 모드. 이미지 없는 ``그림`` 스타일
+  자리표시 단락 (alt 텍스트만 보존). 실 임베드 전환 전 단위 테스트
+  호환용.
+- ``image_info`` dict (``{"binary_item_id", "width_hwpunit",
+  "height_hwpunit"}``) → ``hp:run`` 안에 ``hp:pic`` 을 끼워 emit.
+  ``block.meta["caption"]`` 이 있으면 ``hp:pic`` 내부 ``hp:caption`` 으로
+  흡수 (표와 동일한 모델, ``numType="PICTURE"``).
 
-이 전환은 mapsi.inspect 결과에서 캡션이 별도 ``그림캡션`` paragraph 로
-보이지 않게 되지만, ``hp:pic`` 안의 캡션 텍스트는 동일하게 추출되도록
-inspect 모듈도 함께 갱신된다 (표와 같은 구조).
+호출자 (``section.build_section`` 또는 ``converter.md_to_hwpx``) 가 미리
+``register_image`` 로 ID 를 발급하고 ``Pillow`` 로 픽셀 크기를 측정해
+HWPUNIT 으로 환산한 뒤 ``image_info`` 를 구성한다.
 """
 
 from __future__ import annotations
@@ -468,19 +469,28 @@ def build_figure_paragraph(
     block: Block,
     style_map: dict[str, Any],
     style_table: dict[str, StyleEntry],
+    image_info: dict[str, Any] | None = None,
 ) -> etree._Element:
-    """그림 자리 ``hp:p`` (스타일 ``그림``) 1 개를 생성한다 — Phase 6a.
+    """그림 ``hp:p`` (스타일 ``그림``) 를 생성한다.
 
-    실제 ``hp:pic`` 노드는 Phase 6b 에서 본 함수가 emit 하는 ``hp:run``
-    안에 추가될 예정이다. 현재는 alt 텍스트만 ``hp:t`` 로 보존한다 (자리
-    표시 + 시각적 단서). alt 가 빈 문자열이면 본문 없는 단락이 된다.
+    Parameters
+    ----------
+    block:
+        ``role="figure"`` Block. ``meta["src"]`` 와 ``meta["caption"]`` 사용.
+    style_map / style_table:
+        :func:`build_paragraph` 와 동일.
+    image_info:
+        Phase 6b 모드 활성화 시 dict. None 이면 Phase 6a placeholder 모드
+        (이미지 없는 단락; alt 텍스트만 보존). dict 키:
+            - ``binary_item_id``: ``register_image`` 가 발급한 ID 문자열
+            - ``width_hwpunit`` / ``height_hwpunit``: 환산된 그림 크기
 
-    Notes
-    -----
-    여기서 ``그림`` 스타일을 쓰는 이유는 ADR 0001 의 일반화 — "역할별
-    의미 스타일을 부여" — 와 일관되게 하기 위함이다. 샘플 HWPX 의
-    원본은 wrapper 단락에 ``본문`` 스타일을 쓰지만, 우리 변환기는 사용자가
-    한/글에서 그림 영역만 한꺼번에 재서식할 수 있도록 ``그림`` 을 부여한다.
+    Returns
+    -------
+    lxml Element
+        ``hp:p`` 노드. image_info 가 있으면 내부 ``hp:run`` 안에 ``hp:pic``
+        (캡션 있으면 ``hp:caption`` 까지 포함) 이 들어가고 alt 텍스트는
+        ``shapeComment`` 로 옮겨진다 (한/글 표준).
     """
     name = style_name(style_map, "figure", 0)
     if name not in style_table:
@@ -499,7 +509,28 @@ def build_figure_paragraph(
             "merged": "0",
         },
     )
-    p.append(_make_text_run(block.text, entry.char_pr_id))
+    if image_info is None:
+        # Phase 6a placeholder: alt 텍스트만 보존
+        p.append(_make_text_run(block.text, entry.char_pr_id))
+        return p
+
+    # Phase 6b: hp:pic 끼운 단락
+    run = etree.SubElement(
+        p, f"{_HP}run", attrib={"charPrIDRef": entry.char_pr_id}
+    )
+    pic = _build_pic(
+        binary_item_id=str(image_info["binary_item_id"]),
+        width_hwpunit=int(image_info["width_hwpunit"]),
+        height_hwpunit=int(image_info["height_hwpunit"]),
+        alt_text=block.text,
+        caption=block.meta.get("caption"),
+        caption_entry=(
+            style_table[style_name(style_map, "figure_caption", 0)]
+            if block.meta.get("caption")
+            else None
+        ),
+    )
+    run.append(pic)
     return p
 
 
@@ -559,9 +590,273 @@ def build_figure_caption_paragraph(
     return p
 
 
+# ---------------------------------------------------------------------------
+# hp:pic (그림 노드) 빌더 — Phase 6b
+# ---------------------------------------------------------------------------
+
+# 한/글 외부 좌표계와의 정합을 위한 상수.
+HC_NS = "http://www.hancom.co.kr/hwpml/2011/core"
+_HC = f"{{{HC_NS}}}"
+
+_FIGURE_OUT_MARGIN = (0, 283, 283, 283)  # (left, right, top, bottom) HWPUNIT
+_FIGURE_IN_MARGIN = (0, 0, 0, 0)
+_FIGURE_CAPTION_WIDTH = 8504
+_FIGURE_CAPTION_GAP = 850
+
+
+def _build_pic(
+    binary_item_id: str,
+    width_hwpunit: int,
+    height_hwpunit: int,
+    alt_text: str,
+    caption: str | None,
+    caption_entry: StyleEntry | None,
+) -> etree._Element:
+    """``<hp:pic>`` 노드 1 개를 생성한다.
+
+    Parameters
+    ----------
+    binary_item_id:
+        ``content.hpf`` 의 ``opf:item`` id (= ``register_image`` 발급).
+        ``hc:img binaryItemIDRef`` 가 이 값을 참조한다.
+    width_hwpunit / height_hwpunit:
+        그림의 표시 크기 (HWPUNIT). 원본 크기와 표시 크기를 동일하게
+        설정해 한/글에서 변형 없이 보이도록 한다.
+    alt_text:
+        대체 텍스트. ``hp:shapeComment`` 로 옮겨 한/글 접근성 검사기가
+        읽도록 한다. 빈 문자열이면 shapeComment 자체를 생성하지 않는다.
+    caption:
+        캡션 본문 (정제 후, 접두사 제거). None 이면 ``hp:caption`` 노드를
+        만들지 않는다.
+    caption_entry:
+        ``style_table["그림캡션"]``. caption 이 있으면 필수.
+
+    Returns
+    -------
+    lxml Element
+        ``<hp:pic>`` 요소. 한/글이 인식하는 모든 필수 속성/자식을 포함.
+
+    Notes
+    -----
+    한/글이 ``hp:pic`` 을 그릴 때 요구하는 필수 자식 노드 순서는 샘플
+    HWPX (``samples/incremental/06_figure``) 의 출력값을 그대로 따른다.
+    렌더링 매트릭스 (``hc:scaMatrix`` 등) 는 한/글이 문서 오픈 시
+    재계산하므로 항등 행렬로 둔다.
+    """
+    pic = etree.Element(
+        f"{_HP}pic",
+        attrib={
+            "id": str(random.randint(1, 2**31 - 1)),
+            "zOrder": "0",
+            "numberingType": "PICTURE",
+            "textWrap": "TOP_AND_BOTTOM",
+            "textFlow": "BOTH_SIDES",
+            "lock": "0",
+            "dropcapstyle": "None",
+            "href": "",
+            "groupLevel": "0",
+            "instid": str(random.randint(1, 2**31 - 1)),
+            "reverse": "0",
+        },
+    )
+    etree.SubElement(pic, f"{_HP}offset", attrib={"x": "0", "y": "0"})
+    etree.SubElement(
+        pic,
+        f"{_HP}orgSz",
+        attrib={"width": str(width_hwpunit), "height": str(height_hwpunit)},
+    )
+    etree.SubElement(
+        pic,
+        f"{_HP}curSz",
+        attrib={"width": str(width_hwpunit), "height": str(height_hwpunit)},
+    )
+    etree.SubElement(
+        pic, f"{_HP}flip", attrib={"horizontal": "0", "vertical": "0"}
+    )
+    etree.SubElement(
+        pic,
+        f"{_HP}rotationInfo",
+        attrib={
+            "angle": "0",
+            "centerX": str(width_hwpunit // 2),
+            "centerY": str(height_hwpunit // 2),
+            "rotateimage": "1",
+        },
+    )
+    rendering = etree.SubElement(pic, f"{_HP}renderingInfo")
+    for tag in ("transMatrix", "scaMatrix", "rotMatrix"):
+        etree.SubElement(
+            rendering,
+            f"{_HC}{tag}",
+            attrib={
+                "e1": "1",
+                "e2": "0",
+                "e3": "0",
+                "e4": "0",
+                "e5": "1",
+                "e6": "0",
+            },
+        )
+    etree.SubElement(
+        pic,
+        f"{_HC}img",
+        attrib={
+            "binaryItemIDRef": binary_item_id,
+            "bright": "0",
+            "contrast": "0",
+            "effect": "REAL_PIC",
+            "alpha": "0",
+        },
+    )
+    img_rect = etree.SubElement(pic, f"{_HP}imgRect")
+    for i, (x, y) in enumerate(
+        [
+            (0, 0),
+            (width_hwpunit, 0),
+            (width_hwpunit, height_hwpunit),
+            (0, height_hwpunit),
+        ]
+    ):
+        etree.SubElement(
+            img_rect, f"{_HC}pt{i}", attrib={"x": str(x), "y": str(y)}
+        )
+    etree.SubElement(
+        pic,
+        f"{_HP}imgClip",
+        attrib={
+            "left": "0",
+            "right": str(width_hwpunit),
+            "top": "0",
+            "bottom": str(height_hwpunit),
+        },
+    )
+    etree.SubElement(
+        pic, f"{_HP}inMargin", attrib=_margin_attrs(_FIGURE_IN_MARGIN)
+    )
+    etree.SubElement(
+        pic,
+        f"{_HP}imgDim",
+        attrib={
+            "dimwidth": str(width_hwpunit),
+            "dimheight": str(height_hwpunit),
+        },
+    )
+    etree.SubElement(pic, f"{_HP}effects")
+    etree.SubElement(
+        pic,
+        f"{_HP}sz",
+        attrib={
+            "width": str(width_hwpunit),
+            "widthRelTo": "ABSOLUTE",
+            "height": str(height_hwpunit),
+            "heightRelTo": "ABSOLUTE",
+            "protect": "0",
+        },
+    )
+    etree.SubElement(
+        pic,
+        f"{_HP}pos",
+        attrib={
+            "treatAsChar": "1",
+            "affectLSpacing": "0",
+            "flowWithText": "1",
+            "allowOverlap": "0",
+            "holdAnchorAndSO": "0",
+            "vertRelTo": "PARA",
+            "horzRelTo": "PARA",
+            "vertAlign": "TOP",
+            "horzAlign": "LEFT",
+            "vertOffset": "0",
+            "horzOffset": "0",
+        },
+    )
+    etree.SubElement(
+        pic, f"{_HP}outMargin", attrib=_margin_attrs(_FIGURE_OUT_MARGIN)
+    )
+    if alt_text:
+        comment = etree.SubElement(pic, f"{_HP}shapeComment")
+        comment.text = alt_text
+    if caption is not None:
+        if caption_entry is None:
+            raise ValueError("caption 이 있으면 caption_entry 가 필수")
+        pic.append(_build_pic_caption(caption, caption_entry, width_hwpunit))
+    return pic
+
+
+def _build_pic_caption(
+    text: str, caption_entry: StyleEntry, ref_width_hwpunit: int
+) -> etree._Element:
+    """``hp:pic`` 내부 ``<hp:caption>`` 노드를 만든다.
+
+    표 캡션 (:func:`_build_caption`) 과 거의 동일하지만:
+        - ``side="BOTTOM"`` (그림 캡션은 그림 아래)
+        - ``lastWidth`` 는 그림 폭 기반 (표는 표 폭 기반)
+        - autoNum 의 ``numType="PICTURE"``
+    """
+    caption = etree.Element(
+        f"{_HP}caption",
+        attrib={
+            "side": "BOTTOM",
+            "fullSz": "0",
+            "width": str(_FIGURE_CAPTION_WIDTH),
+            "gap": str(_FIGURE_CAPTION_GAP),
+            "lastWidth": str(ref_width_hwpunit),
+        },
+    )
+    sublist = etree.SubElement(
+        caption,
+        f"{_HP}subList",
+        attrib=_sublist_attrs(vert_align="TOP"),
+    )
+    p = etree.SubElement(
+        sublist,
+        f"{_HP}p",
+        attrib={
+            "id": "0",
+            "paraPrIDRef": caption_entry.para_pr_id,
+            "styleIDRef": caption_entry.id,
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    run = etree.SubElement(
+        p, f"{_HP}run", attrib={"charPrIDRef": caption_entry.char_pr_id}
+    )
+    prefix_t = etree.SubElement(run, f"{_HP}t")
+    prefix_t.text = "그림 "
+    ctrl = etree.SubElement(run, f"{_HP}ctrl")
+    auto_num = etree.SubElement(
+        ctrl,
+        f"{_HP}autoNum",
+        attrib={"num": "1", "numType": "PICTURE"},
+    )
+    etree.SubElement(
+        auto_num,
+        f"{_HP}autoNumFormat",
+        attrib={
+            "type": "DIGIT",
+            "userChar": "",
+            "prefixChar": "",
+            "suffixChar": "",
+            "supscript": "0",
+        },
+    )
+    body_t = etree.SubElement(run, f"{_HP}t")
+    body_t.text = " " + text
+    return caption
+
+
 def build_picture(block: Block, style_map: dict[str, Any]) -> etree._Element:
-    """그림(hp:pic) 노드를 생성한다 (Phase 6b 에서 구현)."""
-    raise NotImplementedError
+    """그림(hp:pic) 노드를 생성한다 — 외부 호출용 래퍼.
+
+    Phase 6b 의 본체는 :func:`_build_pic` (private). 본 함수는 호환을 위해
+    스텁으로 남겨두었으며 직접 호출을 권장하지 않는다.
+    """
+    raise NotImplementedError(
+        "build_picture 는 외부에서 직접 호출하지 않는다. "
+        "build_figure_paragraph(..., image_info=...) 를 사용할 것."
+    )
 
 
 def build_footnote_ref(block: Block, style_map: dict[str, Any]) -> etree._Element:

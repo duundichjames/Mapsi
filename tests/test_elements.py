@@ -259,6 +259,139 @@ class TestBuildFigureParagraph:
             assert p.get(attr) is not None, f"hp:p 의 {attr!r} 속성 누락"
 
 
+class TestBuildFigureParagraphWithPic:
+    """``image_info`` 가 주어진 Phase 6b 모드 — 실 hp:pic 발급."""
+
+    image_info = {
+        "binary_item_id": "image1",
+        "width_hwpunit": 15000,
+        "height_hwpunit": 9000,
+    }
+
+    def test_run_contains_pic_node(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="diagram"),
+            style_map,
+            style_table,
+            image_info=self.image_info,
+        )
+        run = p.find(f"{HP_NS}run")
+        assert run is not None
+        pic = run.find(f"{HP_NS}pic")
+        assert pic is not None
+
+    def test_pic_has_required_children_in_order(
+        self, style_map, style_table
+    ) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="x"),
+            style_map,
+            style_table,
+            image_info=self.image_info,
+        )
+        pic = p.find(f"{HP_NS}run/{HP_NS}pic")
+        children = [etree_qname_local(c.tag) for c in pic]
+        # 핵심 자식 노드들 (한/글이 거부하지 않는 최소 집합) 이 모두 존재.
+        for required in (
+            "offset",
+            "orgSz",
+            "curSz",
+            "renderingInfo",
+            "img",
+            "imgRect",
+            "imgClip",
+            "sz",
+            "pos",
+        ):
+            assert required in children, f"hp:pic 의 {required!r} 누락"
+
+    def test_img_references_binary_item_id(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="x"),
+            style_map,
+            style_table,
+            image_info={"binary_item_id": "image42", "width_hwpunit": 100, "height_hwpunit": 100},
+        )
+        img = p.find(f".//{{{HC_NS}}}img")
+        assert img is not None
+        assert img.get("binaryItemIDRef") == "image42"
+
+    def test_orgSz_curSz_use_hwpunit_values(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="x"),
+            style_map,
+            style_table,
+            image_info=self.image_info,
+        )
+        org = p.find(f".//{HP_NS}orgSz")
+        cur = p.find(f".//{HP_NS}curSz")
+        assert (org.get("width"), org.get("height")) == ("15000", "9000")
+        assert (cur.get("width"), cur.get("height")) == ("15000", "9000")
+
+    def test_alt_text_goes_into_shape_comment(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="대체 텍스트"),
+            style_map,
+            style_table,
+            image_info=self.image_info,
+        )
+        comment = p.find(f".//{HP_NS}shapeComment")
+        assert comment is not None
+        assert comment.text == "대체 텍스트"
+        # placeholder 모드와 달리 hp:t 는 없어야 함 (이중 노출 방지).
+        # hp:caption 안의 hp:t 는 caption 없는 케이스이므로 없음.
+        ts_outside_pic = [
+            t for t in p.iter(f"{HP_NS}t")
+            if t.getparent() is None or t.getparent().getparent() is not None
+        ]
+        # caption 없으므로 hp:pic 안에도 hp:t 없음 → 전체 hp:t 0
+        assert p.find(f"{HP_NS}run/{HP_NS}t") is None
+
+    def test_no_alt_omits_shape_comment(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt=""),
+            style_map,
+            style_table,
+            image_info=self.image_info,
+        )
+        assert p.find(f".//{HP_NS}shapeComment") is None
+
+    def test_caption_absorbed_into_pic(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="x", caption="흐름도"),
+            style_map,
+            style_table,
+            image_info=self.image_info,
+        )
+        caption = p.find(f".//{HP_NS}caption")
+        assert caption is not None
+        assert caption.get("side") == "BOTTOM"
+        # autoNum numType=PICTURE
+        auto_num = caption.find(f".//{HP_NS}autoNum")
+        assert auto_num is not None
+        assert auto_num.get("numType") == "PICTURE"
+        # 캡션 본문 텍스트 (접미부) 가 hp:t 로 들어감
+        ts = [t.text for t in caption.iter(f"{HP_NS}t") if t.text]
+        assert any("흐름도" in t for t in ts)
+
+    def test_no_caption_omits_caption_node(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="x"),
+            style_map,
+            style_table,
+            image_info=self.image_info,
+        )
+        assert p.find(f".//{HP_NS}caption") is None
+
+
+def etree_qname_local(tag: str) -> str:
+    """``{ns}local`` 형태에서 ``local`` 만 추출."""
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+HC_NS = "http://www.hancom.co.kr/hwpml/2011/core"
+
+
 class TestBuildFigureCaptionParagraph:
     def test_returns_그림캡션_styled_paragraph(
         self, style_map, style_table

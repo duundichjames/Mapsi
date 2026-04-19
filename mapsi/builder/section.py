@@ -65,6 +65,7 @@ def build_section(
     style_map: dict[str, Any],
     style_table: dict[str, StyleEntry],
     base_section_path: str | Path,
+    image_map: dict[str, dict] | None = None,
 ) -> bytes:
     """Block 리스트를 받아 완성된 section0.xml 바이트열을 반환한다.
 
@@ -79,6 +80,11 @@ def build_section(
     base_section_path:
         secPr 추출 원본인 ``samples/base/unpacked/Contents/section0.xml``
         경로. 이 파일의 첫 ``hp:p`` 가 secPr 호스트로 사용된다.
+    image_map:
+        figure 의 ``src`` 문자열 → ``{binary_item_id, width_hwpunit,
+        height_hwpunit}`` 매핑 (``converter._register_figure_images`` 가
+        구성). None 이면 figure 들은 Phase 6a placeholder 모드로 emit
+        된다 (이미지 없음, alt 텍스트만). 단위 테스트 호환을 위해 옵션.
 
     Returns
     -------
@@ -86,6 +92,7 @@ def build_section(
         ``<?xml ...?>`` 선언으로 시작하는 완전한 XML 바이트열.
         UTF-8 인코딩, standalone="yes".
     """
+    image_map = image_map or {}
     base_tree = etree.parse(str(base_section_path))
     new_root = base_tree.getroot()
 
@@ -105,16 +112,25 @@ def build_section(
     # 3. 우리 변환 결과 블록들을 호스트 단락 뒤에 순서대로 추가.
     #    role 별 dispatch:
     #      - table:  wrapper paragraph 안에 hp:tbl + (선택) caption
-    #      - figure: 그림 자리 hp:p (Phase 6a; 6b 에서 hp:pic 추가) +
-    #                meta["caption"] 이 있으면 그림캡션 hp:p 도 추가
+    #      - figure: image_map 에 src 가 있으면 hp:pic 끼운 단일 hp:p
+    #                (캡션도 그 안의 hp:caption 으로 흡수). 없으면 Phase 6a
+    #                placeholder 모드 (그림 단락 + 별도 그림캡션 단락).
     #      - 그 외:  단순 hp:p 1 개로 매핑
     for block in blocks:
         if block.role == "table":
             new_root.append(build_table_wrapper(block, style_map, style_table))
         elif block.role == "figure":
-            new_root.append(build_figure_paragraph(block, style_map, style_table))
+            src = block.meta.get("src") if block.meta else None
+            image_info = image_map.get(src) if src else None
+            new_root.append(
+                build_figure_paragraph(
+                    block, style_map, style_table, image_info=image_info
+                )
+            )
+            # placeholder 모드에서만 별도 캡션 단락 추가 (Phase 6a 호환).
+            # hp:pic 모드에서는 캡션이 hp:pic 내부로 들어갔으므로 중복 emit 금지.
             caption = block.meta.get("caption")
-            if caption:
+            if image_info is None and caption:
                 new_root.append(
                     build_figure_caption_paragraph(
                         str(caption), style_map, style_table
