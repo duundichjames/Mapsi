@@ -635,3 +635,125 @@ class TestBuildParagraphWithFootnotes:
         # 정의가 없어도 " " (공백 1개) 는 보존 (한/글 패턴 일관성)
         assert body_t is not None
         assert body_t.text == " "
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: 수식 마커 빌더 (`equation_marks`)
+# ---------------------------------------------------------------------------
+
+
+class TestEquationParagraph:
+    """``meta["equation_marks"]`` 가 있는 paragraph 의 빌드 결과 검증.
+
+    세션 conftest 가 ``MAPSI_NO_LLM=1`` 을 강제하므로 모든 마커 본문은
+    LaTeX 원문 그대로 ``[hnc 수식]…[/hnc 수식]`` 으로 박힌다.
+    """
+
+    @staticmethod
+    def _make_block(text: str, marks: list[dict]) -> Block:
+        return Block(
+            role="paragraph",
+            text=text,
+            meta={"equation_marks": marks},
+        )
+
+    def test_inline_equation_emits_marker_text_in_run(
+        self, style_map, style_table
+    ) -> None:
+        block = self._make_block(
+            "본문  입니다.",
+            [{"offset": 3, "latex": "a^2+b^2", "display": False}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        assert p.get("styleIDRef") == "3"  # 본문
+        run = p.find(f"{HP_NS}run")
+        ts = run.findall(f"{HP_NS}t")
+        # 평문 앞 / 마커 / 평문 뒤 = 3 개의 hp:t
+        assert [t.text for t in ts] == [
+            "본문 ",
+            "[hnc 수식]a^2+b^2[/hnc 수식]",
+            " 입니다.",
+        ]
+
+    def test_inline_equation_at_start_skips_leading_empty_t(
+        self, style_map, style_table
+    ) -> None:
+        block = self._make_block(
+            " 는 변수.",
+            [{"offset": 0, "latex": "x", "display": False}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        ts = p.find(f"{HP_NS}run").findall(f"{HP_NS}t")
+        assert [t.text for t in ts] == [
+            "[hnc 수식]x[/hnc 수식]",
+            " 는 변수.",
+        ]
+
+    def test_inline_equation_at_end_skips_trailing_empty_t(
+        self, style_map, style_table
+    ) -> None:
+        block = self._make_block(
+            "수식 ",
+            [{"offset": 3, "latex": "y", "display": False}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        ts = p.find(f"{HP_NS}run").findall(f"{HP_NS}t")
+        assert [t.text for t in ts] == [
+            "수식 ",
+            "[hnc 수식]y[/hnc 수식]",
+        ]
+
+    def test_multiple_inline_equations_in_order(
+        self, style_map, style_table
+    ) -> None:
+        block = self._make_block(
+            "값  와  의 합  입니다.",
+            [
+                {"offset": 2, "latex": "a", "display": False},
+                {"offset": 5, "latex": "b", "display": False},
+                {"offset": 10, "latex": "c", "display": False},
+            ],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        ts = [t.text for t in p.find(f"{HP_NS}run").findall(f"{HP_NS}t")]
+        assert ts == [
+            "값 ",
+            "[hnc 수식]a[/hnc 수식]",
+            " 와 ",
+            "[hnc 수식]b[/hnc 수식]",
+            " 의 합 ",
+            "[hnc 수식]c[/hnc 수식]",
+            " 입니다.",
+        ]
+
+    def test_display_equation_paragraph_uses_본문_style(
+        self, style_map, style_table
+    ) -> None:
+        """디스플레이 수식 단락도 본문 스타일을 그대로 사용 (ADR 0002)."""
+        block = self._make_block(
+            "",
+            [{"offset": 0, "latex": "\\frac{a}{b}", "display": True}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        assert p.get("styleIDRef") == "3"  # 본문 (수식 전용 스타일 없음)
+        ts = [t.text for t in p.find(f"{HP_NS}run").findall(f"{HP_NS}t")]
+        assert ts == ["[hnc 수식]\\frac{a}{b}[/hnc 수식]"]
+
+    def test_footnote_and_equation_both_present_raises(
+        self, style_map, style_table
+    ) -> None:
+        block = Block(
+            role="paragraph",
+            text="x",
+            meta={
+                "footnote_marks": [
+                    {"kind": "footnote_ref", "offset": 0,
+                     "footnote_id": 0, "text": "주."}
+                ],
+                "equation_marks": [
+                    {"offset": 1, "latex": "y", "display": False}
+                ],
+            },
+        )
+        with pytest.raises(NotImplementedError, match="동시에"):
+            build_paragraph(block, style_map, style_table)

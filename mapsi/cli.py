@@ -53,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     log = logging.getLogger("mapsi.cli")
 
+    _load_dotenv_if_available()
+
     if args.no_llm:
         import os
         os.environ["MAPSI_NO_LLM"] = "1"
@@ -75,6 +77,21 @@ def main(argv: list[str] | None = None) -> int:
 
     log.info("변환 완료: %s", args.output)
     return 0
+
+
+def _load_dotenv_if_available() -> None:
+    """``.env`` 파일에서 환경 변수를 로드 (python-dotenv 가 있을 때만).
+
+    ``mapsi[llm]`` extras 를 설치한 경우에만 ``python-dotenv`` 가 들어
+    있으므로, ImportError 시 조용히 skip 한다 (LLM 안 쓰는 사용자에게
+    의존성을 강요하지 않음). 셸 환경 변수가 이미 있으면 덮어쓰지
+    않는다 (`override=False` 가 dotenv 의 기본 동작).
+    """
+    try:
+        from dotenv import load_dotenv  # type: ignore
+    except ImportError:
+        return
+    load_dotenv()
 
 
 if __name__ == "__main__":

@@ -121,6 +121,8 @@ def build_paragraph(
     block:
         파서 + walker 통과한 Block. ``role`` 과 ``depth`` 로 스타일 결정.
         ``meta["footnote_marks"]`` 가 있으면 인라인 각주를 끼워 emit.
+        ``meta["equation_marks"]`` 가 있으면 인라인/디스플레이 수식 마커를
+        끼워 emit (ADR 0002).
     style_map:
         ``config.load_style_map()`` 의 반환값. role/depth → 스타일 *이름* 룩업.
         각주 본문 단락 스타일 (= ``footnote`` → ``"각주"``) 룩업에도 사용.
@@ -163,16 +165,71 @@ def build_paragraph(
             "merged": "0",
         },
     )
-    marks = (block.meta or {}).get("footnote_marks") if block.meta else None
-    if marks:
+    meta = block.meta or {}
+    foot_marks = meta.get("footnote_marks")
+    eq_marks = meta.get("equation_marks")
+    if foot_marks and eq_marks:
+        raise NotImplementedError(
+            "한 단락에 각주와 수식이 동시에 있는 경우는 아직 지원하지 않는다 "
+            "(09 픽스처 범위 외; 필요 시 _make_run_with_inline_marks 로 통합)"
+        )
+    if foot_marks:
         p.append(
             _make_run_with_footnotes(
-                block.text, marks, entry.char_pr_id, style_map, style_table
+                block.text, foot_marks, entry.char_pr_id, style_map, style_table
             )
+        )
+    elif eq_marks:
+        p.append(
+            _make_run_with_equations(block.text, eq_marks, entry.char_pr_id)
         )
     else:
         p.append(_make_text_run(block.text, entry.char_pr_id))
     return p
+
+
+def _make_run_with_equations(
+    text: str,
+    marks: list[dict[str, Any]],
+    char_pr_id: str,
+) -> etree._Element:
+    """본문 ``hp:run`` 안에 평문과 수식 마커 텍스트를 번갈아 emit (Phase 9).
+
+    각주와 달리 수식은 마커가 평문 텍스트이므로 ``hp:ctrl`` 없이 ``hp:t``
+    만으로 처리된다. ``mapsi.math.converter.convert_equation`` 의 결과는
+    이미 ``[hnc 수식]…[/hnc 수식]`` 마커로 감싸진 문자열이므로, 빌더는 그
+    문자열을 그대로 ``hp:t`` 에 박기만 한다 (ADR 0002).
+
+    Display equation 단락은 ``text=""`` 이고 ``marks=[{offset:0, ...}]`` 한
+    개만 있는 형태로 들어온다 — 이 경우 빈 ``hp:t`` 1개 + 마커 ``hp:t``
+    1개가 나온다. 한/글이 빈 ``hp:t`` 를 무난히 처리하므로 Inline 케이스의
+    "빈 ``hp:t`` 회피" 와 동일한 정책 (offset 이 cursor 와 같으면 평문
+    skip) 을 적용한다.
+
+    Lazy import (``convert_equation``): 수식 없는 변환에서는 LLM SDK 를
+    임포트하지 않도록 함수 안에서 import 한다.
+    """
+    from ..math.converter import convert_equation
+
+    run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": char_pr_id})
+    sorted_marks = sorted(marks, key=lambda m: m.get("offset", 0))
+    cursor = 0
+    for mark in sorted_marks:
+        offset = int(mark.get("offset", cursor))
+        offset = max(cursor, min(offset, len(text)))
+        if offset > cursor:
+            t_before = etree.SubElement(run, f"{_HP}t")
+            t_before.text = text[cursor:offset]
+        marker_text = convert_equation(
+            mark.get("latex", ""), bool(mark.get("display", False))
+        )
+        t_marker = etree.SubElement(run, f"{_HP}t")
+        t_marker.text = marker_text
+        cursor = offset
+    if cursor < len(text):
+        t_after = etree.SubElement(run, f"{_HP}t")
+        t_after.text = text[cursor:]
+    return run
 
 
 def _make_run_with_footnotes(

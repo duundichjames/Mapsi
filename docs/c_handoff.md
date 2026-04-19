@@ -33,9 +33,9 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
 - 체크포인트 1 통과 (빈 마크다운 → 한/글 오픈 확인)
 - B 가 C 영역까지 임시로 모든 파일에 스텁 또는 동작 구현을 박아둠
 - 작업 브랜치 `feature/core-engine` 에 누적 (heading/list/blockquote/code/
-  table/figure/footnote/reference 까지 머지됨)
-- 테스트 231/231 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
-  06_figure + 07_footnote + 08_references 까지)
+  table/figure/footnote/reference/equation 까지 머지됨)
+- 테스트 275/275 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
+  06_figure + 07_footnote + 08_references + 09_equations 까지)
 - 그림은 2 단계로 분리 진행됐고 둘 다 완료:
   - **Phase 6a (완료)** — 파서/walker/빌더가 그림 단락과 캡션을 인식.
     이미지 바이너리 임베드 없음, `그림` 스타일의 자리표시 단락 + 별도
@@ -57,8 +57,17 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
   깊이 1 헤딩이 등장하기 전까지). 헤딩 자체의 스타일은 보존 (= 개요 1).
   구현은 `mapsi/ast_walker.py::_demote_in_reference_section`, 빌더는 추가
   변경 없이 `style_name(role="reference")` 룩업 1 번으로 처리됨.
-- 결정 기록은 `docs/decisions/` (현재 `0001-table-caption-promotion.md` 1 건,
-  그림 캡션 정책도 동일 ADR 의 일반화 적용)
+- 수식 (Phase 9, ADR 0002): `hp:equation` XML 직접 emit 은 v0.2 로 미루고,
+  모든 LaTeX 수식은 본문에 `[hnc 수식]…[/hnc 수식]` 평문 마커로 박힌다.
+  마커 안 본문은 LLM 우선순위 (Anthropic → OpenAI → 폴백) 로 결정되며,
+  키 없거나 `MAPSI_NO_LLM=1` 이면 LaTeX 원문 그대로. 결과는
+  `~/.mapsi/equation_cache.json` 에 sha256 키로 캐시된다. 변환기는
+  `mapsi/math/converter.py::convert_equation`, 캐시는
+  `mapsi/math/cache.py`. CLI 는 `python-dotenv` 가 설치돼 있으면 `.env`
+  를 자동 로드 (`mapsi[llm]` extras).
+- 결정 기록은 `docs/decisions/` (현재 `0001-table-caption-promotion.md` +
+  `0002-equation-marker-mode.md` 2 건, 그림 캡션 정책은 0001 의 일반화
+  적용)
 
 ---
 
@@ -99,8 +108,8 @@ C 가 와서 가장 먼저 할 일은 **본인 영역의 임시 구현을 검토
 |------|------|------|----------|
 | `mapsi/builder/bindata.py` | 이미지의 BinData/ 복사, 고유 ID 발급, NFC 정규화 | 계약 3 | 중 |
 | `mapsi/builder/manifest.py` | content.hpf 의 opf:manifest 항목 추가 | 계약 4 | 중 |
-| `mapsi/math/converter.py` | LaTeX → HNC 수식 변환 (LLM 호출) | 계약 7 | 하 |
-| `mapsi/math/cache.py` | 변환 결과 로컬 JSON 캐시 (I/O 헬퍼는 동작 중, 호출자만 붙이면 됨) | — | 하 |
+| `mapsi/math/converter.py` | LaTeX → HNC 수식 변환 (Anthropic > OpenAI > 폴백, 캐시 통합 완료) | 계약 7 | (B 가 v0.1 채움) |
+| `mapsi/math/cache.py` | 변환 결과 로컬 JSON 캐시 (sha256 키, env override 지원) | — | (B 가 v0.1 채움) |
 
 ### 3.3. 새로 작성 (테스트)
 
@@ -109,7 +118,7 @@ C 가 와서 가장 먼저 할 일은 **본인 영역의 임시 구현을 검토
 | `tests/test_packager.py` | mimetype 첫 엔트리 + STORED 검증, 다양한 work_dir 입력 |
 | `tests/test_bindata.py` | 이미지 등록, NFC 정규화, 중복 등록 처리 |
 | `tests/test_manifest.py` | content.hpf 항목 추가/덮어쓰기 |
-| `tests/test_math.py` | 폴백 동작, 캐시 적중, API 키 우선순위 |
+| `tests/test_math.py` | 폴백 동작, 캐시 적중, API 키 우선순위 (B 가 v0.1 채움; C 는 LLM 응답 품질 회귀 추가 권장) |
 | `tests/test_integration.py` | 실제 학술 문서 분량의 통합 시나리오 (CP4 단계) |
 
 ---

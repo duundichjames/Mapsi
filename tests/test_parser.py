@@ -471,3 +471,113 @@ def test_round_trip_07_footnote_sample(repo_root: Path) -> None:
     ]
     assert blocks[2].meta == {"footnote_id": 0}
     assert blocks[3].meta == {"footnote_id": 1}
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: 수식 (math_inline / math_block) 파싱
+# ---------------------------------------------------------------------------
+
+
+class TestInlineEquation:
+    """``$...$`` 인라인 수식이 paragraph 의 ``equation_marks`` 에 보관된다."""
+
+    def test_single_inline_equation(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "본문 $a^2 + b^2 = c^2$ 입니다.\n")
+        blocks = parse_markdown(md)
+        assert len(blocks) == 1
+        b = blocks[0]
+        assert b.role == "paragraph"
+        # 마커 자체는 평문에서 제외 — 양옆 평문만 남음.
+        assert b.text == "본문  입니다."
+        assert b.meta["equation_marks"] == [
+            {"offset": 3, "latex": "a^2 + b^2 = c^2", "display": False}
+        ]
+        assert "footnote_marks" not in b.meta
+
+    def test_inline_equation_at_paragraph_start(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "$x$ 는 변수.\n")
+        blocks = parse_markdown(md)
+        assert blocks[0].text == " 는 변수."
+        marks = blocks[0].meta["equation_marks"]
+        assert marks == [{"offset": 0, "latex": "x", "display": False}]
+
+    def test_inline_equation_at_paragraph_end(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "끝의 수식 $y$\n")
+        blocks = parse_markdown(md)
+        assert blocks[0].text == "끝의 수식 "
+        marks = blocks[0].meta["equation_marks"]
+        assert marks == [{"offset": 6, "latex": "y", "display": False}]
+
+    def test_multiple_inline_equations_in_same_paragraph(
+        self, tmp_path: Path
+    ) -> None:
+        md = _write(tmp_path, "값 $a$ 와 $b$ 의 합 $c$ 입니다.\n")
+        blocks = parse_markdown(md)
+        marks = blocks[0].meta["equation_marks"]
+        assert [m["latex"] for m in marks] == ["a", "b", "c"]
+        assert [m["offset"] for m in marks] == [2, 5, 10]
+        assert all(m["display"] is False for m in marks)
+        assert blocks[0].text == "값  와  의 합  입니다."
+
+    def test_no_equation_means_no_equation_marks_key(
+        self, tmp_path: Path
+    ) -> None:
+        md = _write(tmp_path, "수식 없는 평문.\n")
+        blocks = parse_markdown(md)
+        assert "equation_marks" not in blocks[0].meta
+
+
+class TestDisplayEquation:
+    """``$$...$$`` 디스플레이 수식이 단독 paragraph Block 으로 발급된다."""
+
+    def test_single_display_equation(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "$$\n\\frac{a}{b}\n$$\n")
+        blocks = parse_markdown(md)
+        assert len(blocks) == 1
+        b = blocks[0]
+        assert b.role == "paragraph"
+        assert b.text == ""
+        assert b.meta["equation_marks"] == [
+            {"offset": 0, "latex": "\\frac{a}{b}", "display": True}
+        ]
+
+    def test_display_between_paragraphs(self, tmp_path: Path) -> None:
+        md = _write(
+            tmp_path,
+            "앞 단락.\n\n$$\nE = mc^2\n$$\n\n뒤 단락.\n",
+        )
+        blocks = parse_markdown(md)
+        assert [b.role for b in blocks] == ["paragraph"] * 3
+        assert blocks[0].text == "앞 단락."
+        assert blocks[1].text == ""
+        assert blocks[1].meta["equation_marks"] == [
+            {"offset": 0, "latex": "E = mc^2", "display": True}
+        ]
+        assert blocks[2].text == "뒤 단락."
+        # 평문 단락에는 equation_marks 가 없어야.
+        assert "equation_marks" not in blocks[0].meta
+        assert "equation_marks" not in blocks[2].meta
+
+    def test_round_trip_09_equations_sample(self, repo_root: Path) -> None:
+        """A 의 ``samples/incremental/09_equations/09_equations.md`` 정상 파싱.
+
+        구성 (마크다운 본문 단락 4개 = paragraph 4): 본문(인라인 수식 1) +
+        본문 + 디스플레이 수식 단독 + 본문.
+        """
+        md = (
+            repo_root
+            / "samples"
+            / "incremental"
+            / "09_equations"
+            / "09_equations.md"
+        )
+        blocks = parse_markdown(md)
+        roles = [b.role for b in blocks]
+        assert roles == ["paragraph"] * 4
+        # 1번 단락: 인라인 수식
+        assert "equation_marks" in blocks[0].meta
+        assert blocks[0].meta["equation_marks"][0]["display"] is False
+        # 3번 단락: 디스플레이 수식
+        assert blocks[2].text == ""
+        eq2 = blocks[2].meta["equation_marks"]
+        assert len(eq2) == 1 and eq2[0]["display"] is True

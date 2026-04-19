@@ -11,15 +11,50 @@ Markdown Adapter for Paragraph-Style Injection
 목적에 따라 둘 중 하나를 선택한다.
 
 ```bash
-# 변환기만 사용 (런타임 의존성만 설치: markdown-it-py, lxml, pyyaml)
+# 변환기만 사용 (런타임 의존성: markdown-it-py, mdit-py-plugins, lxml, pyyaml, Pillow)
 pip install -e .
+
+# + 수식 LLM 변환 (anthropic, openai, python-dotenv 추가 설치)
+pip install -e ".[llm]"
 
 # 개발 / 테스트까지 (위 + pytest, pytest-cov 추가 설치)
 pip install -e ".[dev]"
+
+# LLM + 개발 모두
+pip install -e ".[llm,dev]"
 ```
 
-`.[dev]` 의 대괄호는 `pyproject.toml` 의 `optional-dependencies.dev`
-묶음을 가리킨다. zsh 에서는 글로빙 충돌을 막기 위해 따옴표가 필요하다.
+`.[dev]` / `.[llm,dev]` 의 대괄호는 `pyproject.toml` 의
+`optional-dependencies.*` 묶음을 가리킨다. zsh 에서는 글로빙 충돌을 막기
+위해 따옴표가 필요하다.
+
+### 수식 변환 (선택)
+
+`.md` 안의 `$ ... $` (인라인) / `$$ ... $$` (디스플레이) LaTeX 수식은
+본문에 `[hnc 수식]<HNC 스크립트>[/hnc 수식]` 평문 마커로 박힌다 (자세한
+배경은 [ADR 0002](docs/decisions/0002-equation-marker-mode.md)).
+
+마커 안 본문은 LLM 키 유무에 따라 결정된다:
+
+| 환경 | 마커 안 본문 | 사용자 동작 |
+|---|---|---|
+| `MAPSI_NO_LLM=1` 또는 키 없음 | LaTeX 원문 | 한/글 수식 편집기에서 LaTeX 보고 직접 입력 |
+| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` 설정 | HNC 수식 문법 | 마커 안 텍스트 복사 → 한/글 수식 편집기에 붙여넣기 → 즉시 렌더링 |
+
+키는 셸 환경 변수에 직접 두거나, 프로젝트 루트의 `.env` 에 적어 두면
+CLI 가 `python-dotenv` 로 자동 로드한다 (`mapsi[llm]` 설치 시):
+
+```dotenv
+# .env
+ANTHROPIC_API_KEY=sk-ant-...
+# OPENAI_API_KEY=sk-...    # 둘 다 있으면 Anthropic 우선
+```
+
+CLI 옵션으로 일회성으로 LLM 을 끌 수도 있다:
+
+```bash
+mapsi input.md -o out.hwpx --no-llm
+```
 
 ## 사용
 
@@ -76,9 +111,14 @@ python -m mapsi.inspect output/*.hwpx
 ### 테스트
 
 ```bash
-pytest                          # 전체
+pytest                          # 전체 (현재 275개)
 pytest tests/test_golden.py -v  # 골든 회귀만
 ```
+
+세션 시작 시 `tests/conftest.py` 가 `MAPSI_NO_LLM=1` 을 강제 설정해, 키가
+있어도 회귀는 항상 폴백 (LaTeX 원문) 경로를 탄다. 캐시 경로도 임시
+디렉토리로 격리해 사용자의 `~/.mapsi/equation_cache.json` 을 오염시키지
+않는다.
 
 ## 디자인 철학
 
