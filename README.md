@@ -72,6 +72,13 @@ mapsi input.md -o out.hwpx --no-llm
 mapsi input.md -o output.hwpx
 # 또는
 python -m mapsi input.md -o output.hwpx
+
+
+# LLM 끄기 (수식을 LaTeX 원문 그대로)
+mapsi input.md -o output.hwpx --no-llm
+
+# 무슨 일이 일어나는지 자세히 보기
+mapsi input.md -o output.hwpx --verbose
 ```
 
 ### 검증 — 변환 결과가 의도대로인지 확인

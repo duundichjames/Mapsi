@@ -66,12 +66,23 @@ def main(argv: list[str] | None = None) -> int:
         log.debug("work_dir: %s", work_dir)
         if args.dry_run:
             log.info("dry-run: 변환만 수행하고 출력 파일은 쓰지 않음")
-            from .parser import parse_markdown
             from .ast_walker import walk
+            from .builder.header import parse_style_table
             from .builder.section import build_section
+            from .parser import parse_markdown
+
+            repo_root = Path(__file__).resolve().parents[1]
+            base_section = (
+                repo_root / "samples" / "base" / "unpacked" / "Contents" / "section0.xml"
+            )
+            header_bytes = (
+                repo_root / "templates" / "Contents" / "header.xml"
+            ).read_bytes()
+            style_table = parse_style_table(header_bytes)
+
             blocks = parse_markdown(args.input)
             walked = walk(blocks)
-            build_section(walked, style_map)
+            build_section(walked, style_map, style_table, base_section)
             return 0
         md_to_hwpx(args.input, args.output, style_map, work_dir)
 
