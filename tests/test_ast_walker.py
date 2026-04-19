@@ -4,14 +4,14 @@
     - 규칙 1: 표 캡션 승격 (직전 단락 → ``meta["caption"]``, ADR 0001)
     - 규칙 2: 그림 캡션 승격 (직후 단락 → ``meta["caption"]``)
     - 규칙 4: 각주 본문 흡수 (footnote_def → paragraph mark["text"])
-
-후속 픽스처에서 참고문헌 규칙이 추가되면 케이스를 늘릴 것.
+    - 규칙 5: 참고문헌 섹션 demote (paragraph/list → reference)
 """
 
 from __future__ import annotations
 
 from mapsi.ast_walker import (
     FIGURE_CAPTION_PATTERN,
+    REFERENCE_HEADING_TEXTS,
     TABLE_CAPTION_PATTERN,
     walk,
 )
@@ -426,3 +426,176 @@ class TestFootnoteAbsorption:
         ]
         walk(blocks)
         assert "text" not in original_mark
+
+
+# ---------------------------------------------------------------------------
+# 규칙 5: 참고문헌 섹션 demote
+# ---------------------------------------------------------------------------
+
+
+def _h1(text: str) -> Block:
+    return Block(role="heading", depth=1, text=text)
+
+
+def _h2(text: str) -> Block:
+    return Block(role="heading", depth=2, text=text)
+
+
+def _para(text: str) -> Block:
+    return Block(role="paragraph", text=text)
+
+
+def _bullet(text: str, depth: int = 1) -> Block:
+    return Block(role="bullet_list", depth=depth, text=text)
+
+
+def _ordered(text: str, depth: int = 1) -> Block:
+    return Block(role="ordered_list", depth=depth, text=text)
+
+
+class TestReferenceHeadingTexts:
+    """``REFERENCE_HEADING_TEXTS`` 자체 (4 종 정확 매치)."""
+
+    def test_exactly_four_variants(self) -> None:
+        assert REFERENCE_HEADING_TEXTS == frozenset(
+            {"참고문헌", "참고 문헌", "References", "REFERENCES"}
+        )
+
+    def test_lowercase_references_is_not_a_match(self) -> None:
+        """소문자 ``references`` 는 명세상 후보가 아니다 (정확 매치)."""
+        assert "references" not in REFERENCE_HEADING_TEXTS
+
+
+class TestReferenceSectionDemote:
+    def test_paragraphs_after_korean_heading_become_reference(self) -> None:
+        blocks = [
+            _para("본문 단락."),
+            _h1("참고 문헌"),
+            _para("Mazzucato. 2015."),
+            _para("OECD. 2021."),
+        ]
+        result = walk(blocks)
+        assert [b.role for b in result] == [
+            "paragraph",
+            "heading",
+            "reference",
+            "reference",
+        ]
+        assert result[2].text == "Mazzucato. 2015."
+        assert result[2].depth == 0
+
+    def test_paragraphs_after_english_heading_become_reference(self) -> None:
+        blocks = [_h1("References"), _para("Foo. 2020.")]
+        result = walk(blocks)
+        assert result[1].role == "reference"
+
+    def test_uppercase_english_heading_matches(self) -> None:
+        blocks = [_h1("REFERENCES"), _para("Bar.")]
+        assert walk(blocks)[1].role == "reference"
+
+    def test_unrelated_heading_does_not_trigger(self) -> None:
+        """본문 한가운데 등장하는 임의 헤딩은 demote 트리거 아님."""
+        blocks = [
+            _h1("개요"),
+            _para("개요 본문."),
+            _h1("참고문헌이 아닌 제목"),
+            _para("이건 그대로 본문."),
+        ]
+        result = walk(blocks)
+        assert [b.role for b in result] == [
+            "heading",
+            "paragraph",
+            "heading",
+            "paragraph",
+        ]
+
+    def test_subheading_inside_section_does_not_close_section(self) -> None:
+        """h2 는 섹션 종료 신호가 아니다 (A 명세)."""
+        blocks = [
+            _h1("참고문헌"),
+            _h2("국문 자료"),
+            _para("국문 1."),
+            _h2("영문 자료"),
+            _para("English 1."),
+        ]
+        result = walk(blocks)
+        assert [b.role for b in result] == [
+            "heading",
+            "heading",
+            "reference",
+            "heading",
+            "reference",
+        ]
+
+    def test_next_h1_closes_section(self) -> None:
+        """새 h1 은 항상 섹션을 종료시킨다 (그것이 또 다른 참고문헌이 아닌 한)."""
+        blocks = [
+            _h1("References"),
+            _para("Inside."),
+            _h1("부록"),
+            _para("Outside."),
+        ]
+        result = walk(blocks)
+        assert result[1].role == "reference"
+        assert result[3].role == "paragraph"
+
+    def test_consecutive_reference_headings_stay_in_section(self) -> None:
+        """h1 두 번 다 참고문헌 후보면 in_ref 가 계속 유지된다."""
+        blocks = [
+            _h1("참고문헌"),
+            _para("a"),
+            _h1("References"),
+            _para("b"),
+        ]
+        result = walk(blocks)
+        assert result[1].role == "reference"
+        assert result[3].role == "reference"
+
+    def test_bullet_and_ordered_list_become_reference(self) -> None:
+        """리스트도 reference 로 변환되며 depth 는 0 으로 평탄화."""
+        blocks = [
+            _h1("참고문헌"),
+            _bullet("항목 1", depth=1),
+            _ordered("항목 2", depth=2),
+        ]
+        result = walk(blocks)
+        assert [b.role for b in result[1:]] == ["reference", "reference"]
+        assert result[1].depth == 0
+        assert result[2].depth == 0
+
+    def test_table_inside_section_is_passthrough(self) -> None:
+        """표는 섹션 안에서도 자기 스타일을 유지 (변환 안 함)."""
+        blocks = [_h1("참고문헌"), _table([["a", "b"]])]
+        result = walk(blocks)
+        assert result[1].role == "table"
+
+    def test_heading_text_with_surrounding_whitespace_matches(self) -> None:
+        """헤딩 텍스트 좌우 공백은 strip 후 비교."""
+        blocks = [_h1("  참고문헌  "), _para("a")]
+        assert walk(blocks)[1].role == "reference"
+
+    def test_inner_whitespace_variation_is_not_normalized(self) -> None:
+        """내부 공백은 normalize 안 함 — "참고  문헌" (스페이스 2개) 은 매치 X."""
+        blocks = [_h1("참고  문헌"), _para("a")]
+        assert walk(blocks)[1].role == "paragraph"
+
+    def test_no_heading_means_no_demote(self) -> None:
+        """참고문헌 헤딩이 없으면 어떤 단락도 reference 로 변하지 않는다."""
+        blocks = [_para("a"), _para("b")]
+        result = walk(blocks)
+        assert all(b.role == "paragraph" for b in result)
+
+    def test_input_is_not_mutated_by_demote(self) -> None:
+        """원본 paragraph 의 role 이 보존되어야 한다 (순수 함수)."""
+        para = _para("inside")
+        blocks = [_h1("참고문헌"), para]
+        walk(blocks)
+        assert para.role == "paragraph"
+        assert para.depth == 0  # 원래 0; 변경 X 라는 의미는 아님
+
+    def test_heading_block_role_is_preserved(self) -> None:
+        """헤딩 자체는 절대 reference 로 변하면 안 된다 (개요 1 스타일 유지)."""
+        blocks = [_h1("참고문헌"), _para("a")]
+        result = walk(blocks)
+        assert result[0].role == "heading"
+        assert result[0].depth == 1

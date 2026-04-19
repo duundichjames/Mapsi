@@ -33,9 +33,9 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
 - 체크포인트 1 통과 (빈 마크다운 → 한/글 오픈 확인)
 - B 가 C 영역까지 임시로 모든 파일에 스텁 또는 동작 구현을 박아둠
 - 작업 브랜치 `feature/core-engine` 에 누적 (heading/list/blockquote/code/
-  table/figure/footnote 까지 머지됨)
-- 테스트 212/212 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
-  06_figure + 07_footnote 까지)
+  table/figure/footnote/reference 까지 머지됨)
+- 테스트 231/231 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
+  06_figure + 07_footnote + 08_references 까지)
 - 그림은 2 단계로 분리 진행됐고 둘 다 완료:
   - **Phase 6a (완료)** — 파서/walker/빌더가 그림 단락과 캡션을 인식.
     이미지 바이너리 임베드 없음, `그림` 스타일의 자리표시 단락 + 별도
@@ -51,6 +51,12 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
   동일 구조). 원문 라벨은 무시되고 등장 순서로 1, 2, 3 ... 자동 부여.
   자세한 구조는 `mapsi/builder/elements.py` 의 `_build_footnote` docstring
   참고.
+- 참고문헌 (Phase 8): 깊이 1 헤딩의 텍스트가 4 가지 후보 (`참고문헌`,
+  `참고 문헌`, `References`, `REFERENCES`) 중 하나면 그 이후 `paragraph` /
+  `bullet_list` / `ordered_list` 가 `참고문헌` 스타일로 재할당된다 (다음
+  깊이 1 헤딩이 등장하기 전까지). 헤딩 자체의 스타일은 보존 (= 개요 1).
+  구현은 `mapsi/ast_walker.py::_demote_in_reference_section`, 빌더는 추가
+  변경 없이 `style_name(role="reference")` 룩업 1 번으로 처리됨.
 - 결정 기록은 `docs/decisions/` (현재 `0001-table-caption-promotion.md` 1 건,
   그림 캡션 정책도 동일 ADR 의 일반화 적용)
 
