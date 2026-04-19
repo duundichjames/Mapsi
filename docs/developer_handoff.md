@@ -160,6 +160,30 @@ for 폴더 in sorted(샘플루트.iterdir()):
   2. `parse_style_table(header_xml)[name]` → `StyleEntry(id, paraPrIDRef, charPrIDRef)`
 - 예시, `styleIDRef="4"` 대신 `styleIDRef=entry.id` (entry 는 위 룩업 결과)
 
+### 3.6. 변환 결과 검증 도구 (`mapsi.inspect`)
+
+한/글 정품이 없거나, 한글 뷰어(무료) 의 한계로 스타일 표시줄을 볼
+수 없을 때 변환 결과를 셸에서 1초에 점검하기 위한 도구. 회귀 테스트와
+별도로, 새 픽스처를 작성하거나 어떤 단락이 어떤 스타일을 받았는지
+빠르게 확인할 때 사용한다.
+
+```bash
+# 단락별 (스타일 이름, 텍스트) 출력
+python -m mapsi.inspect output/04_blockquote_code.hwpx
+
+# + 사용된 스타일 정의 + 정합성 점검
+python -m mapsi.inspect output/04_blockquote_code.hwpx --styles
+
+# 빈 단락(secPr 호스트 등) 도 포함
+python -m mapsi.inspect output/04_blockquote_code.hwpx --all
+```
+
+표/그림/각주 같은 복잡한 단계로 갈수록 "내가 만든 출력이 의도한
+스타일을 받았는가" 를 매번 확인할 일이 늘어난다. 본 도구는 그 확인을
+자동화하며, 라이브러리 API (`mapsi.inspect.extract_paragraph_sequence`)
+로도 사용 가능해 골든 회귀 테스트와 동일한 추출 로직을 공유한다 (단일
+진실원).
+
 ---
 
 ## 4. 개발자 C 와의 협업 지점
