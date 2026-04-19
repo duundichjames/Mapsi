@@ -269,6 +269,70 @@ def test_table_caption_is_not_promoted_by_parser(tmp_path: Path) -> None:
     assert blocks[1].meta["caption"] is None
 
 
+def test_image_only_paragraph_emits_figure_block(tmp_path: Path) -> None:
+    """``![alt](src)`` 단독 단락은 ``role='figure'`` Block 으로 변환된다."""
+    md = _write(tmp_path, "![개요도](images/overview.png)\n")
+    blocks = parse_markdown(md)
+    assert len(blocks) == 1
+    blk = blocks[0]
+    assert blk.role == "figure"
+    assert blk.text == "개요도"
+    assert blk.meta == {"src": "images/overview.png", "caption": None}
+
+
+def test_image_with_empty_alt(tmp_path: Path) -> None:
+    """alt 가 비어 있어도 figure 블록은 정상 생성된다 (text 만 빈 문자열)."""
+    md = _write(tmp_path, "![](images/no_alt.png)\n")
+    blocks = parse_markdown(md)
+    assert blocks == [
+        Block(
+            role="figure",
+            text="",
+            meta={"src": "images/no_alt.png", "caption": None},
+        )
+    ]
+
+
+def test_image_mixed_with_text_falls_back_to_paragraph(tmp_path: Path) -> None:
+    """그림과 텍스트가 한 단락에 섞여 있으면 figure 가 아닌 paragraph 로 본다.
+
+    인라인 그림 처리는 후속 픽스처에서 별도 다룬다 (현재는 alt 텍스트조차
+    평문에 포함되지 않으며, 빈 자리만 남는 것이 정상 동작).
+    """
+    md = _write(tmp_path, "앞 ![alt](x.png) 뒤\n")
+    blocks = parse_markdown(md)
+    assert len(blocks) == 1
+    assert blocks[0].role == "paragraph"
+
+
+def test_figure_with_surrounding_paragraphs(tmp_path: Path) -> None:
+    md = _write(
+        tmp_path,
+        "앞 단락.\n\n"
+        "![도식](pic.png)\n\n"
+        "그림 1. 캡션 본문\n\n"
+        "뒷 단락.\n",
+    )
+    blocks = parse_markdown(md)
+    roles = [b.role for b in blocks]
+    assert roles == ["paragraph", "figure", "paragraph", "paragraph"]
+    assert blocks[1].text == "도식"
+    assert blocks[1].meta["src"] == "pic.png"
+    assert blocks[1].meta["caption"] is None  # 파서는 캡션 결정 안 함
+
+
+def test_figure_caption_is_not_promoted_by_parser(tmp_path: Path) -> None:
+    """파서 단계에서는 그림 직후 캡션 패턴 단락이 그대로 paragraph 로 남는다.
+
+    캡션 승격은 ``ast_walker.walk()`` 의 책임 (ADR 0001 일반화 적용).
+    """
+    md = _write(tmp_path, "![도식](pic.png)\n\n그림 1. 본문\n")
+    blocks = parse_markdown(md)
+    assert blocks[0].role == "figure"
+    assert blocks[0].meta["caption"] is None
+    assert blocks[1] == Block(role="paragraph", text="그림 1. 본문")
+
+
 def test_round_trip_02_bullet_list_fixture(repo_root: Path) -> None:
     """``tests/golden/02_bullet_list/input.md`` 가 의도한 6 블록을 만든다."""
     md = repo_root / "tests" / "golden" / "02_bullet_list" / "input.md"

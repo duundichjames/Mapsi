@@ -44,7 +44,12 @@ from typing import Any
 from lxml import etree
 
 from ..parser import Block
-from .elements import build_paragraph, build_table_wrapper
+from .elements import (
+    build_figure_caption_paragraph,
+    build_figure_paragraph,
+    build_paragraph,
+    build_table_wrapper,
+)
 from .header import StyleEntry
 
 
@@ -98,11 +103,23 @@ def build_section(
     _strip_text_content(secpr_host)
 
     # 3. 우리 변환 결과 블록들을 호스트 단락 뒤에 순서대로 추가.
-    #    role 별 dispatch: 표는 wrapper paragraph 안에 hp:tbl 을 품기 때문에
-    #    별도 빌더로 보낸다. 그 외 역할은 모두 단순 hp:p 1 개로 매핑된다.
+    #    role 별 dispatch:
+    #      - table:  wrapper paragraph 안에 hp:tbl + (선택) caption
+    #      - figure: 그림 자리 hp:p (Phase 6a; 6b 에서 hp:pic 추가) +
+    #                meta["caption"] 이 있으면 그림캡션 hp:p 도 추가
+    #      - 그 외:  단순 hp:p 1 개로 매핑
     for block in blocks:
         if block.role == "table":
             new_root.append(build_table_wrapper(block, style_map, style_table))
+        elif block.role == "figure":
+            new_root.append(build_figure_paragraph(block, style_map, style_table))
+            caption = block.meta.get("caption")
+            if caption:
+                new_root.append(
+                    build_figure_caption_paragraph(
+                        str(caption), style_map, style_table
+                    )
+                )
         else:
             new_root.append(build_paragraph(block, style_map, style_table))
 

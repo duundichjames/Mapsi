@@ -32,9 +32,17 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
 
 - 체크포인트 1 통과 (빈 마크다운 → 한/글 오픈 확인)
 - B 가 C 영역까지 임시로 모든 파일에 스텁 또는 동작 구현을 박아둠
-- 작업 브랜치, `feature/core-engine` (heading/list/blockquote/code 기능 머지됨),
-  `feature/05-table` (표 + 캡션 작업 중)
-- 테스트 124/124 통과 (체크포인트 1 + 04_blockquote_code + 05_table 까지)
+- 작업 브랜치 `feature/core-engine` 에 누적 (heading/list/blockquote/code/
+  table/figure-구조 까지 머지됨)
+- 테스트 155/155 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
+  06_figure_struct 까지)
+- 그림은 2 단계로 분리 진행 중:
+  - **Phase 6a (현재)** — 파서/walker/빌더가 그림 단락과 캡션을 인식.
+    이미지 바이너리 임베드 없음, `그림` 스타일의 자리표시 단락 + 별도
+    `그림캡션` 단락만 emit
+  - **Phase 6b (다음)** — 실제 `hp:pic` XML + `BinData/` 복사 +
+    `content.hpf` manifest 패치 (계약 3 `register_image` / 계약 4
+    `update_manifest` 가 이때 실 구현됨)
 - 결정 기록은 `docs/decisions/` (현재 `0001-table-caption-promotion.md` 1 건)
 
 ---

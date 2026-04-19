@@ -9,9 +9,11 @@
       제거한다. 직전 단락은 평탄 리스트에서 제거된다.
       근거: docs/decisions/0001-table-caption-promotion.md
 
-규칙 2) 그림 캡션 승격 (후속)
-    - 그림(이미지) 직후의 단락이 ``^(그림|Figure)\\s+\\d+\\.\\s*`` 로
-      시작하면 해당 단락을 ``figure_caption`` 으로 승격하고 접두사를 제거한다.
+규칙 2) 그림 캡션 승격
+    - 그림 Block 의 **직후** 단락이 ``^(그림|Figure)\\s+\\d+\\.\\s*`` 로
+      시작하면 해당 단락을 그림 Block 의 ``meta["caption"]`` 으로 흡수하고
+      접두사를 제거한다. 위치는 표와 반대이며 (표=직전, 그림=직후), 같은
+      ADR 0001 의 일반화된 캡션 승격 정책을 따른다.
 
 규칙 3) 참고문헌 섹션 감지 (후속)
     - 헤딩 텍스트가 "참고문헌" 또는 "References" 와 일치하면 그 이후의
@@ -29,7 +31,7 @@ from copy import deepcopy
 from .parser import Block
 
 
-__all__ = ["walk", "TABLE_CAPTION_PATTERN"]
+__all__ = ["walk", "TABLE_CAPTION_PATTERN", "FIGURE_CAPTION_PATTERN"]
 
 
 TABLE_CAPTION_PATTERN = re.compile(r"^(표|Table)\s+\d+\.\s*")
@@ -45,16 +47,27 @@ TABLE_CAPTION_PATTERN = re.compile(r"^(표|Table)\s+\d+\.\s*")
 - 0 글자 이상 공백 (캡션 본문 앞 공백 정규화)
 """
 
+FIGURE_CAPTION_PATTERN = re.compile(r"^(그림|Figure)\s+\d+\.\s*")
+"""그림 캡션 승격 정규식. 형태는 :data:`TABLE_CAPTION_PATTERN` 과 동일하되
+접두사가 ``표|Table`` 대신 ``그림|Figure``. ADR 0001 의 일반화 적용.
+"""
+
 
 def walk(blocks: list[Block]) -> list[Block]:
     """Block 트리를 순회하며 문맥 의존 규칙을 적용한 새 리스트를 반환한다.
 
     원본 ``blocks`` 는 변형하지 않고 순수 함수로 동작한다.
 
-    현 단계 구현: 규칙 1 (표 캡션 승격) 만 적용. 나머지 규칙은 후속
-    픽스처에서 추가.
+    적용 순서:
+        1) 표 캡션 승격 (직전 단락 → 표 ``meta["caption"]``)
+        2) 그림 캡션 승격 (직후 단락 → 그림 ``meta["caption"]``)
+
+    두 규칙은 서로 다른 정규식과 역할을 다루므로 순서 상관없이 동일한
+    결과를 산출한다. 현 구현은 표 → 그림 순.
     """
-    return _promote_table_captions(blocks)
+    out = _promote_table_captions(blocks)
+    out = _promote_figure_captions(out)
+    return out
 
 
 def _promote_table_captions(blocks: list[Block]) -> list[Block]:
@@ -79,6 +92,57 @@ def _promote_table_captions(blocks: list[Block]) -> list[Block]:
                 continue
         out.append(blk)
     return out
+
+
+def _promote_figure_captions(blocks: list[Block]) -> list[Block]:
+    """규칙 2 — 그림 직후의 단락이 캡션 패턴이면 그림에 흡수.
+
+    표와 달리 lookahead 스캔. ``figure`` Block 을 만나면 그 다음 Block 이
+    paragraph 이고 :data:`FIGURE_CAPTION_PATTERN` 매치인지 확인한다. 매치
+    & 접두사 제거 후 텍스트가 비어있지 않으면, 그림 Block 의
+    ``meta["caption"]`` 에 정제 텍스트를 채우고 다음 Block 은 출력에서
+    건너뛴다 (소비). 이미 캡션이 설정된 그림은 변경하지 않는다 (멱등).
+
+    원본 그림 Block 은 보존을 위해 ``deepcopy`` 후 수정.
+    """
+    out: list[Block] = []
+    i = 0
+    n = len(blocks)
+    while i < n:
+        blk = blocks[i]
+        if (
+            blk.role == "figure"
+            and not blk.meta.get("caption")
+            and i + 1 < n
+        ):
+            nxt = blocks[i + 1]
+            caption = _try_extract_caption(nxt, FIGURE_CAPTION_PATTERN)
+            if caption is not None:
+                fig = deepcopy(blk)
+                fig.meta["caption"] = caption
+                out.append(fig)
+                i += 2
+                continue
+        out.append(blk)
+        i += 1
+    return out
+
+
+def _try_extract_caption(block: Block, pattern: re.Pattern[str]) -> str | None:
+    """``block`` 이 paragraph 이고 ``pattern`` 에 매치하면 정제 텍스트 반환.
+
+    표/그림 캡션 모두에 사용 가능한 공용 헬퍼. 접두사 제거 후 빈 문자열이
+    되는 경우 (e.g. "그림 1." 단독) 는 캡션으로 보지 않고 ``None`` 반환.
+    """
+    if block.role != "paragraph":
+        return None
+    match = pattern.match(block.text)
+    if match is None:
+        return None
+    caption = block.text[match.end() :].strip()
+    if not caption:
+        return None
+    return caption
 
 
 def _try_promote_previous(out: list[Block]) -> str | None:

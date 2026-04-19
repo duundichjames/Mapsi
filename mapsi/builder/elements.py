@@ -8,8 +8,28 @@
     - build_run: hp:run (인라인 서식 그룹) -- 후속
     - build_text_run: hp:run + hp:t (평문) -- 구현 완료 (private 헬퍼)
     - build_table_wrapper: hp:p > hp:run > hp:tbl (표 + 캡션) -- 구현 완료
-    - build_picture: hp:pic (그림) -- 후속
+    - build_figure_paragraph: hp:p (그림 자리표시 + 알트 텍스트) -- Phase 6a
+    - build_figure_caption_paragraph: hp:p (그림캡션 + autoNum) -- Phase 6a
+    - build_picture: hp:pic (실제 그림 노드) -- Phase 6b 에서 구현
     - build_footnote_ref: hp:footnoteRef (각주 참조) -- 후속
+
+Phase 6a / 6b 분리 메모
+-----------------------
+
+Phase 6a 에서는 그림을 ``그림`` 스타일의 빈 단락 (``hp:p``) 으로만 emit
+한다. 실제 이미지 바이너리 임베드와 ``hp:pic`` XML 작성은 Phase 6b 의
+범위이며, 이 때 다음과 같이 변경된다:
+
+1. ``build_figure_paragraph`` 가 빈 단락 대신 ``hp:run`` 안에 ``hp:pic``
+   요소를 끼워 emit (``binaryItemIDRef`` 로 BinData 참조).
+2. ``build_figure_caption_paragraph`` 는 폐기되고, 캡션은 ``hp:pic`` 내부의
+   ``hp:caption`` 으로 흡수 (표와 동일한 패턴, 단 ``numType="PICTURE"``).
+3. ``section.build_section`` 의 figure dispatch 가 단일 ``hp:p`` (그림 +
+   캡션 모두 내부) 만 추가하도록 단순화.
+
+이 전환은 mapsi.inspect 결과에서 캡션이 별도 ``그림캡션`` paragraph 로
+보이지 않게 되지만, ``hp:pic`` 안의 캡션 텍스트는 동일하게 추출되도록
+inspect 모듈도 함께 갱신된다 (표와 같은 구조).
 """
 
 from __future__ import annotations
@@ -29,6 +49,8 @@ __all__ = [
     "build_run",
     "build_text_run",
     "build_table_wrapper",
+    "build_figure_paragraph",
+    "build_figure_caption_paragraph",
     "build_picture",
     "build_footnote_ref",
 ]
@@ -442,8 +464,103 @@ def _sublist_attrs(vert_align: str) -> dict[str, str]:
     }
 
 
+def build_figure_paragraph(
+    block: Block,
+    style_map: dict[str, Any],
+    style_table: dict[str, StyleEntry],
+) -> etree._Element:
+    """그림 자리 ``hp:p`` (스타일 ``그림``) 1 개를 생성한다 — Phase 6a.
+
+    실제 ``hp:pic`` 노드는 Phase 6b 에서 본 함수가 emit 하는 ``hp:run``
+    안에 추가될 예정이다. 현재는 alt 텍스트만 ``hp:t`` 로 보존한다 (자리
+    표시 + 시각적 단서). alt 가 빈 문자열이면 본문 없는 단락이 된다.
+
+    Notes
+    -----
+    여기서 ``그림`` 스타일을 쓰는 이유는 ADR 0001 의 일반화 — "역할별
+    의미 스타일을 부여" — 와 일관되게 하기 위함이다. 샘플 HWPX 의
+    원본은 wrapper 단락에 ``본문`` 스타일을 쓰지만, 우리 변환기는 사용자가
+    한/글에서 그림 영역만 한꺼번에 재서식할 수 있도록 ``그림`` 을 부여한다.
+    """
+    name = style_name(style_map, "figure", 0)
+    if name not in style_table:
+        raise KeyError(
+            f"스타일 이름 {name!r} (role='figure') 이 header.xml 에 정의돼 있지 않다"
+        )
+    entry = style_table[name]
+    p = etree.Element(
+        f"{_HP}p",
+        attrib={
+            "id": "0",
+            "paraPrIDRef": entry.para_pr_id,
+            "styleIDRef": entry.id,
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    p.append(_make_text_run(block.text, entry.char_pr_id))
+    return p
+
+
+def build_figure_caption_paragraph(
+    text: str,
+    style_map: dict[str, Any],
+    style_table: dict[str, StyleEntry],
+) -> etree._Element:
+    """그림 캡션 ``hp:p`` (스타일 ``그림캡션``) 1 개를 생성한다 — Phase 6a.
+
+    표 캡션과 동일하게 본문 앞에 ``hp:autoNum numType="PICTURE"`` 마커를
+    삽입해 한/글이 "그림 N" 번호를 자동 부여하도록 한다. ``num`` 속성은
+    한/글이 문서 오픈 시 재계산하므로 우리는 ``"1"`` 로 고정.
+
+    Phase 6b 에서 캡션이 ``hp:pic`` 내부의 ``hp:caption`` 으로 이동하면
+    이 함수는 폐기될 예정이다 (표와 동일한 캡션 모델로 통합).
+    """
+    name = style_name(style_map, "figure_caption", 0)
+    if name not in style_table:
+        raise KeyError(
+            f"스타일 이름 {name!r} (role='figure_caption') 이 header.xml 에 정의돼 있지 않다"
+        )
+    entry = style_table[name]
+    p = etree.Element(
+        f"{_HP}p",
+        attrib={
+            "id": "0",
+            "paraPrIDRef": entry.para_pr_id,
+            "styleIDRef": entry.id,
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0",
+        },
+    )
+    run = etree.SubElement(p, f"{_HP}run", attrib={"charPrIDRef": entry.char_pr_id})
+    prefix_t = etree.SubElement(run, f"{_HP}t")
+    prefix_t.text = "그림 "
+    ctrl = etree.SubElement(run, f"{_HP}ctrl")
+    auto_num = etree.SubElement(
+        ctrl,
+        f"{_HP}autoNum",
+        attrib={"num": "1", "numType": "PICTURE"},
+    )
+    etree.SubElement(
+        auto_num,
+        f"{_HP}autoNumFormat",
+        attrib={
+            "type": "DIGIT",
+            "userChar": "",
+            "prefixChar": "",
+            "suffixChar": "",
+            "supscript": "0",
+        },
+    )
+    body_t = etree.SubElement(run, f"{_HP}t")
+    body_t.text = " " + text
+    return p
+
+
 def build_picture(block: Block, style_map: dict[str, Any]) -> etree._Element:
-    """그림(hp:pic) 노드를 생성한다 (후속 픽스처에서 구현)."""
+    """그림(hp:pic) 노드를 생성한다 (Phase 6b 에서 구현)."""
     raise NotImplementedError
 
 

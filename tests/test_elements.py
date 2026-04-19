@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from mapsi.builder.elements import build_paragraph, build_table_wrapper
+from mapsi.builder.elements import (
+    build_figure_caption_paragraph,
+    build_figure_paragraph,
+    build_paragraph,
+    build_table_wrapper,
+)
 from mapsi.builder.header import load_header, parse_style_table
 from mapsi.config import load_style_map
 from mapsi.parser import Block
@@ -198,3 +203,93 @@ class TestBuildTableWrapper:
             build_table_wrapper(
                 _make_table_block([]), style_map, style_table
             )
+
+
+# ---------------------------------------------------------------------------
+# build_figure_paragraph / build_figure_caption_paragraph (Phase 6a)
+# ---------------------------------------------------------------------------
+
+
+def _make_figure_block(
+    src: str, alt: str = "", caption: str | None = None
+) -> Block:
+    return Block(role="figure", text=alt, meta={"src": src, "caption": caption})
+
+
+class TestBuildFigureParagraph:
+    def test_returns_그림_styled_paragraph(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="alt"), style_map, style_table
+        )
+        assert p.tag == f"{HP_NS}p"
+        # 그림 = id 2 in templates/Contents/header.xml
+        assert p.get("styleIDRef") == "2"
+        assert p.get("paraPrIDRef") == "28"
+
+    def test_alt_text_is_emitted_as_placeholder(
+        self, style_map, style_table
+    ) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt="개요도"), style_map, style_table
+        )
+        t = p.find(f"{HP_NS}run/{HP_NS}t")
+        assert t is not None
+        assert t.text == "개요도"
+
+    def test_empty_alt_omits_t_node(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png", alt=""), style_map, style_table
+        )
+        run = p.find(f"{HP_NS}run")
+        assert run is not None
+        assert run.find(f"{HP_NS}t") is None
+
+    def test_required_attrs_present(self, style_map, style_table) -> None:
+        p = build_figure_paragraph(
+            _make_figure_block("a.png"), style_map, style_table
+        )
+        for attr in (
+            "id",
+            "paraPrIDRef",
+            "styleIDRef",
+            "pageBreak",
+            "columnBreak",
+            "merged",
+        ):
+            assert p.get(attr) is not None, f"hp:p 의 {attr!r} 속성 누락"
+
+
+class TestBuildFigureCaptionParagraph:
+    def test_returns_그림캡션_styled_paragraph(
+        self, style_map, style_table
+    ) -> None:
+        p = build_figure_caption_paragraph("개요", style_map, style_table)
+        assert p.tag == f"{HP_NS}p"
+        # 그림캡션 = id 1
+        assert p.get("styleIDRef") == "1"
+        assert p.get("paraPrIDRef") == "30"
+
+    def test_emits_autonum_with_picture_type(
+        self, style_map, style_table
+    ) -> None:
+        p = build_figure_caption_paragraph("본문", style_map, style_table)
+        auto_num = p.find(f"{HP_NS}run/{HP_NS}ctrl/{HP_NS}autoNum")
+        assert auto_num is not None
+        assert auto_num.get("numType") == "PICTURE"
+        assert auto_num.get("num") == "1"
+
+    def test_caption_text_uses_prefix_and_body_pattern(
+        self, style_map, style_table
+    ) -> None:
+        """``<hp:t>그림 </hp:t><autoNum/><hp:t> 본문</hp:t>`` 패턴."""
+        p = build_figure_caption_paragraph("개요도", style_map, style_table)
+        ts = p.findall(f"{HP_NS}run/{HP_NS}t")
+        assert [t.text for t in ts] == ["그림 ", " 개요도"]
+
+    def test_autonum_format_attrs(self, style_map, style_table) -> None:
+        p = build_figure_caption_paragraph("x", style_map, style_table)
+        fmt = p.find(
+            f"{HP_NS}run/{HP_NS}ctrl/{HP_NS}autoNum/{HP_NS}autoNumFormat"
+        )
+        assert fmt is not None
+        assert fmt.get("type") == "DIGIT"
