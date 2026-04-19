@@ -1,83 +1,56 @@
 ###
-# Mapsi 스타일 카탈로그
+# Mapsi 스타일 카탈로그 (정책 = 마크다운 역할 → 한/글 스타일 이름)
 #
-# 이 파일은 마크다운 구조 → 한/글 HWPX 스타일 ID 의 단일 진실원(Single Source
-# of Truth) 이다. 모든 빌더 코드는 절대 ID 숫자를 직접 하드코딩하지 않으며,
-# `mapsi.styles.style_id(role, depth)` 를 통해 본 매핑을 조회한다.
+# 본 파일은 "역할 → 스타일 이름" 매핑만 정의한다. 실제 스타일 ID 정수와
+# paraPrIDRef / charPrIDRef 는 `templates/Contents/header.xml` 의 진실원에서
+# 런타임에 조회한다 (mapsi.builder.header.parse_style_table).
 #
 # - role: 마크다운/문맥에서 추출된 역할 키워드 (영문 snake_case)
-# - name: 한/글 header.xml 에 등록된 스타일 이름 (사용자 노출 문자열)
-# - id:   header.xml 의 hh:style/@id 정수값
+# - 값:   한/글 header.xml 에 등록된 스타일 이름 (사용자 노출 문자열)
 #
-# id 값은 `templates/Contents/header.xml` (= samples/incremental/09_equations
-# 의 header.xml) 에 고정되어 있으며, header.xml 의 paraPrIDRef / charPrIDRef
-# 가 본 ID 를 참조하므로 재할당이 절대 금지된다 (개발자 핸드오프 §3.1).
+# 스타일 ID 가 본 파일에 없는 이유는 docs/c_handoff.md "header.xml 의
+# 불변성" 절 및 README "이름 기반 룩업" 설계 노트 참조.
 ###
 
 version: 1
 header_template: templates/Contents/header.xml
 
 # 본문/제목 — 한/글 내장 스타일에 직접 대응
-paragraph:
-  name: 본문
-  id: 3
+paragraph: 본문
 
 heading:
-  1: { name: "개요 1", id: 4 }
-  2: { name: "개요 2", id: 5 }
-  3: { name: "개요 3", id: 6 }
-  4: { name: "개요 4", id: 7 }
-  5: { name: "개요 5", id: 17 }
-  6: { name: "개요 6", id: 18 }
+  1: 개요 1
+  2: 개요 2
+  3: 개요 3
+  4: 개요 4
+  5: 개요 5
+  6: 개요 6
 
 # 순서 없는 목록 — 마크다운 들여쓰기 깊이별 분리
 bullet_list:
-  1: { name: "네모", id: 14 }
-  2: { name: "동그라미", id: 15 }
-  3: { name: "줄", id: 16 }
+  1: 네모
+  2: 동그라미
+  3: 줄
 
 # 순서 있는 목록 — 번호 텍스트는 원문 보존, 자동번호 사용 안 함
 ordered_list:
-  1: { name: "번호1", id: 10 }
-  2: { name: "번호2", id: 12 }
-  3: { name: "번호3", id: 13 }
+  1: 번호1
+  2: 번호2
+  3: 번호3
 
-# 인용/코드
-blockquote:
-  name: 인용
-  id: 8
-
-code_block:
-  name: 코드
-  id: 9
+# 인용 / 코드
+blockquote: 인용
+code_block: 코드
 
 # 표
-table_cell:
-  name: 표내용
-  id: 33
-
-table_caption:
-  name: 표캡션
-  id: 11
+table_cell: 표내용
+table_caption: 표캡션
 
 # 그림
-figure:
-  name: 그림
-  id: 2
+figure: 그림
+figure_caption: 그림캡션
 
-figure_caption:
-  name: 그림캡션
-  id: 1
-
-# 각주/참고문헌/메모
-footnote:
-  name: 각주
-  id: 25
-
-reference:
-  name: 참고문헌
-  id: 36
-
-memo:
-  name: 메모
-  id: 27
+# 각주 / 참고문헌 / 메모
+footnote: 각주
+reference: 참고문헌
+memo: 메모

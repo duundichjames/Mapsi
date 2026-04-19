@@ -150,12 +150,15 @@ for 폴더 in sorted(샘플루트.iterdir()):
 
 초기 단계에는 styleIDRef 시퀀스 비교만으로 충분하며, 후반에 텍스트 내용과 특수 요소(tbl, pic, equation) 의 존재 여부까지 확장하면 된다.
 
-### 3.5. ID 하드코딩 금지
+### 3.5. ID 하드코딩 금지 (이름 기반 룩업 원칙)
 
 - 빌더 코드 내의 ID 숫자 직접 사용 금지
-- `spec/styles.yaml` 에서 로드된 딕셔너리 경유
-- `styles.py` 의 `스타일ID()` 함수를 통한 역할 키워드 → ID 변환
-- 예시, `styleIDRef="4"` 대신 `styleIDRef="{스타일ID('heading_1')}"`
+- `spec/styles.yaml` 은 *이름* 매핑만 정의 (역할 → "본문" / "개요 1" 등)
+- 정수 ID 는 `templates/Contents/header.xml` 이 단일 진실원
+- 빌더는 다음 두 단계로 ID 를 얻음:
+  1. `style_name(style_map, role, depth)` → 한/글 스타일 *이름*
+  2. `parse_style_table(header_xml)[name]` → `StyleEntry(id, paraPrIDRef, charPrIDRef)`
+- 예시, `styleIDRef="4"` 대신 `styleIDRef=entry.id` (entry 는 위 룩업 결과)
 
 ---
 

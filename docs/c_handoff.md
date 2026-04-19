@@ -119,9 +119,11 @@ API 호출이 실패하거나 키가 없으면 `[hnc 수식]<latex>[/hnc 수식]
 
 ### 4.5. ID 하드코딩 금지
 
-코드 내에 `styleIDRef="4"` 같은 숫자 직접 사용 금지. 항상 `spec/styles.yaml` 에서
-로드된 매핑을 경유. 이건 B 의 코어 영역 규칙이지만 C 가 작성하는 manifest 등도
-동일 원칙을 따라야 함 (ID 가 바뀌면 일괄 추적 가능하도록).
+코드 내에 `styleIDRef="4"` 같은 숫자 직접 사용 금지. 진실원은 한 곳:
+`templates/Contents/header.xml`. `spec/styles.yaml` 은 역할 → *이름* 매핑만
+정의하고, 정수 ID 는 런타임에 `builder.header.parse_style_table()` 이 추출.
+이건 B 의 코어 영역 규칙이지만 C 가 작성하는 manifest 등도 동일 원칙을
+따라야 함 (header.xml 이 갱신되면 자동으로 ID 가 따라옴).
 
 ---
 

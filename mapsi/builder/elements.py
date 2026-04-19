@@ -19,7 +19,7 @@ from typing import Any
 from lxml import etree
 
 from ..parser import Block
-from ..styles import style_id
+from ..styles import style_name
 from .header import StyleEntry
 
 
@@ -49,10 +49,10 @@ def build_paragraph(
     block:
         파서 + walker 통과한 Block. ``role`` 과 ``depth`` 로 스타일 결정.
     style_map:
-        ``config.load_style_map()`` 의 반환값. role/depth → 스타일 ID 룩업.
+        ``config.load_style_map()`` 의 반환값. role/depth → 스타일 *이름* 룩업.
     style_table:
         ``builder.header.parse_style_table()`` 의 반환값.
-        스타일 ID → paraPrIDRef / charPrIDRef 룩업.
+        스타일 이름 → ``StyleEntry`` (id, paraPrIDRef, charPrIDRef) 룩업.
 
     Returns
     -------
@@ -63,24 +63,25 @@ def build_paragraph(
 
     Raises
     ------
+    StyleLookupError
+        ``style_map`` 에 해당 role/depth 가 없을 때 (= styles.yaml 미정의).
     KeyError
-        ``style_table`` 에 해당 styleID 가 없을 때 (= header.xml 미정의).
+        ``style_table`` 에 해당 이름이 없을 때 (= header.xml 미정의).
     """
-    sid_int = style_id(style_map, block.role, block.depth)
-    sid_str = str(sid_int)
-    if sid_str not in style_table:
+    name = style_name(style_map, block.role, block.depth)
+    if name not in style_table:
         raise KeyError(
-            f"styleID {sid_str!r} (role={block.role!r}, depth={block.depth}) "
-            f"가 header.xml 에 정의돼 있지 않다"
+            f"스타일 이름 {name!r} (role={block.role!r}, depth={block.depth}) "
+            f"이 header.xml 에 정의돼 있지 않다"
         )
-    entry = style_table[sid_str]
+    entry = style_table[name]
 
     p = etree.Element(
         f"{_HP}p",
         attrib={
             "id": "0",
             "paraPrIDRef": entry.para_pr_id,
-            "styleIDRef": sid_str,
+            "styleIDRef": entry.id,
             "pageBreak": "0",
             "columnBreak": "0",
             "merged": "0",

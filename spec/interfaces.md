@@ -53,7 +53,12 @@ def load_style_map(yaml_path: str) -> dict:
 
     반환 구조는 spec/styles.yaml 의 키 구조를 그대로 유지하되,
     heading / bullet_list / ordered_list 의 깊이 키는 정수로 정규화한다.
-    예) {"heading": {1: {"name": "개요 1", "id": 4}, ...}, ...}
+    값은 항상 한/글 스타일 *이름* 문자열이다. 정수 ID 와 paraPrIDRef /
+    charPrIDRef 는 별도로 `builder.header.parse_style_table()` 이 header.xml
+    에서 추출한다 (단일 진실원).
+
+    예) {"paragraph": "본문",
+         "heading": {1: "개요 1", 2: "개요 2", ...}, ...}
     """
 ```
 

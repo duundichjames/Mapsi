@@ -5,9 +5,11 @@
 "header.xml 의 불변성"). 본 모듈은 다음 두 가지를 담당한다.
 
 - :func:`load_header` -- 파일을 바이트 그대로 읽어 반환
-- :func:`parse_style_table` -- ``hh:style`` 정의에서 ``id -> {name,
-  paraPrIDRef, charPrIDRef}`` 매핑을 추출. 빌더가 ``hp:p`` 의
-  ``paraPrIDRef`` 와 ``hp:run`` 의 ``charPrIDRef`` 를 결정할 때 사용.
+- :func:`parse_style_table` -- ``hh:style`` 정의에서 ``name -> StyleEntry``
+  매핑을 추출. 빌더가 ``hp:p`` 의 ``styleIDRef`` / ``paraPrIDRef`` 와
+  ``hp:run`` 의 ``charPrIDRef`` 를 결정할 때 사용.
+
+이름이 진실원이 되는 이유는 ``mapsi.styles`` 의 설계 노트 참조.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ HWPML_HEAD_NS = "http://www.hancom.co.kr/hwpml/2011/head"
 class StyleEntry:
     """``hh:style`` 1 개에서 빌더가 필요로 하는 속성만 발췌."""
 
+    id: str
     name: str
     para_pr_id: str
     char_pr_id: str
@@ -43,7 +46,7 @@ def load_header(template_path: str | Path) -> bytes:
 
 
 def parse_style_table(header_bytes: bytes) -> dict[str, StyleEntry]:
-    """``header.xml`` 의 ``hh:style`` 들을 ``id -> StyleEntry`` 로 변환한다.
+    """``header.xml`` 의 ``hh:style`` 들을 ``name -> StyleEntry`` 로 변환한다.
 
     Parameters
     ----------
@@ -53,8 +56,14 @@ def parse_style_table(header_bytes: bytes) -> dict[str, StyleEntry]:
     Returns
     -------
     dict[str, StyleEntry]
-        키는 ``hh:style/@id`` 의 문자열 (예: ``"4"``).
-        각 ``StyleEntry`` 는 ``name``, ``para_pr_id``, ``char_pr_id`` 를 담는다.
+        키는 ``hh:style/@name`` 문자열 (예: ``"개요 1"``).
+        각 ``StyleEntry`` 는 ``id``, ``name``, ``para_pr_id``,
+        ``char_pr_id`` 를 담는다.
+
+    Raises
+    ------
+    ValueError
+        같은 이름의 스타일이 여러 번 등장할 때 (header.xml 정합성 오류).
 
     Notes
     -----
@@ -72,7 +81,12 @@ def parse_style_table(header_bytes: bytes) -> dict[str, StyleEntry]:
             continue
         if para_pr_id is None or char_pr_id is None:
             continue
-        table[sid] = StyleEntry(
-            name=name, para_pr_id=para_pr_id, char_pr_id=char_pr_id
+        if name in table:
+            raise ValueError(
+                f"header.xml 에 같은 이름의 스타일이 중복: {name!r} "
+                f"(id={table[name].id} 와 id={sid})"
+            )
+        table[name] = StyleEntry(
+            id=sid, name=name, para_pr_id=para_pr_id, char_pr_id=char_pr_id
         )
     return table

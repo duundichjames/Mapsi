@@ -1,8 +1,16 @@
-"""역할 키워드 → 한/글 HWPX 스타일 ID 매핑.
+"""역할 키워드 → 한/글 HWPX 스타일 이름 조회.
 
 본 모듈은 ``spec/styles.yaml`` 에서 로드된 매핑 딕셔너리를 받아 역할
-문자열과 깊이로부터 정수 ID 를 반환하는 순수 함수를 제공한다. 빌더 코드
-어디에서도 ID 숫자를 직접 사용하지 않으며, 항상 본 모듈을 경유한다.
+문자열과 깊이로부터 한/글 스타일 *이름* 을 반환하는 순수 함수를 제공한다.
+빌더 코드는 이 이름을 키로 ``builder.header.parse_style_table()`` 결과를
+조회해 실제 ``id`` / ``paraPrIDRef`` / ``charPrIDRef`` 정수값을 얻는다.
+
+설계 노트
+---------
+이전 구현은 yaml 에 ``id`` 정수까지 박아놓고 ``style_id()`` 로 조회했다.
+하지만 ID 의 진실원은 ``templates/Contents/header.xml`` 한 곳이어야 하므로
+yaml 에서 정수 ID 를 빼고 이름만 남겼다. 이름 → 엔트리 룩업은 빌더가
+``style_table[name]`` 으로 직접 수행한다.
 """
 
 from __future__ import annotations
@@ -10,7 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 
-__all__ = ["StyleLookupError", "style_id", "style_name"]
+__all__ = ["StyleLookupError", "style_name"]
 
 
 class StyleLookupError(KeyError):
@@ -21,23 +29,8 @@ class StyleLookupError(KeyError):
 _NESTED_ROLES = frozenset({"heading", "bullet_list", "ordered_list"})
 
 
-def _resolve(style_map: dict[str, Any], role: str, depth: int) -> dict[str, Any]:
-    if role not in style_map:
-        raise StyleLookupError(f"알 수 없는 역할: {role!r}")
-    entry = style_map[role]
-    if role in _NESTED_ROLES:
-        if depth not in entry:
-            available = sorted(k for k in entry if isinstance(k, int))
-            raise StyleLookupError(
-                f"역할 {role!r} 의 깊이 {depth} 가 정의되지 않음 "
-                f"(가능: {available})"
-            )
-        return entry[depth]
-    return entry
-
-
-def style_id(style_map: dict[str, Any], role: str, depth: int = 1) -> int:
-    """역할 키워드와 깊이로 스타일 ID 를 조회한다.
+def style_name(style_map: dict[str, Any], role: str, depth: int = 1) -> str:
+    """역할 키워드와 깊이로 한/글 스타일 이름을 조회한다.
 
     Args:
         style_map: ``config.load_style_map()`` 의 반환 딕셔너리.
@@ -46,14 +39,20 @@ def style_id(style_map: dict[str, Any], role: str, depth: int = 1) -> int:
             역할에서만 의미 있다. 그 외에는 무시된다.
 
     Returns:
-        ``hh:style/@id`` 와 ``hp:p/@styleIDRef`` 가 참조하는 정수 ID.
+        한/글 ``header.xml`` 의 ``hh:style/@name`` 과 1:1 대응되는 이름.
 
     Raises:
         StyleLookupError: 역할 또는 깊이가 매핑에 없을 때.
     """
-    return int(_resolve(style_map, role, depth)["id"])
-
-
-def style_name(style_map: dict[str, Any], role: str, depth: int = 1) -> str:
-    """역할 키워드와 깊이로 사용자 노출 스타일 이름을 조회한다."""
-    return str(_resolve(style_map, role, depth)["name"])
+    if role not in style_map:
+        raise StyleLookupError(f"알 수 없는 역할: {role!r}")
+    entry = style_map[role]
+    if role in _NESTED_ROLES:
+        if not isinstance(entry, dict) or depth not in entry:
+            available = sorted(k for k in (entry or {}) if isinstance(k, int))
+            raise StyleLookupError(
+                f"역할 {role!r} 의 깊이 {depth} 가 정의되지 않음 "
+                f"(가능: {available})"
+            )
+        return str(entry[depth])
+    return str(entry)
