@@ -2,14 +2,10 @@
 
 ``tests/golden/01_headings/input.md`` 를 변환한 결과의 본문 단락
 시퀀스가 ``expected.yaml`` 과 일치하는지 검증.
-
-현재 ``parse_markdown`` 미구현이므로 본 테스트는 ``xfail`` 로 박혀 있고,
-다음 커밋에서 파서/빌더가 헤딩을 처리하게 되면 ``xfail`` 마커를 제거함.
 """
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -47,10 +43,6 @@ def converted_hwpx(fixture_dir: Path, style_map: dict, tmp_path: Path) -> Path:
     return out_path
 
 
-@pytest.mark.xfail(
-    reason="parse_markdown / builder 미구현. 다음 커밋에서 통과 예정.",
-    strict=True,
-)
 def test_style_sequence_matches_expected(
     converted_hwpx: Path, fixture_dir: Path
 ) -> None:

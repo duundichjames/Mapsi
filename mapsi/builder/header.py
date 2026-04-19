@@ -1,16 +1,36 @@
-"""header.xml 로더.
+"""header.xml 로더 + 스타일 테이블 파서.
 
 ``templates/Contents/header.xml`` 은 모든 스타일 정의가 누적된 마스터 헤더이며,
-변환기는 이 파일을 동적으로 조립하지 않는다. 본 모듈은 단순 로드만 담당한다
-(개발자 핸드오프 §3.1 의 "header.xml 의 불변성").
+변환기는 이 파일을 동적으로 조립하지 않는다 (개발자 핸드오프 §3.1 의
+"header.xml 의 불변성"). 본 모듈은 다음 두 가지를 담당한다.
+
+- :func:`load_header` -- 파일을 바이트 그대로 읽어 반환
+- :func:`parse_style_table` -- ``hh:style`` 정의에서 ``id -> {name,
+  paraPrIDRef, charPrIDRef}`` 매핑을 추출. 빌더가 ``hp:p`` 의
+  ``paraPrIDRef`` 와 ``hp:run`` 의 ``charPrIDRef`` 를 결정할 때 사용.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
+from lxml import etree
 
-__all__ = ["load_header"]
+
+__all__ = ["StyleEntry", "load_header", "parse_style_table"]
+
+
+HWPML_HEAD_NS = "http://www.hancom.co.kr/hwpml/2011/head"
+
+
+@dataclass(frozen=True)
+class StyleEntry:
+    """``hh:style`` 1 개에서 빌더가 필요로 하는 속성만 발췌."""
+
+    name: str
+    para_pr_id: str
+    char_pr_id: str
 
 
 def load_header(template_path: str | Path) -> bytes:
@@ -20,3 +40,39 @@ def load_header(template_path: str | Path) -> bytes:
     원본 바이트 보존이 유리하기 때문).
     """
     return Path(template_path).read_bytes()
+
+
+def parse_style_table(header_bytes: bytes) -> dict[str, StyleEntry]:
+    """``header.xml`` 의 ``hh:style`` 들을 ``id -> StyleEntry`` 로 변환한다.
+
+    Parameters
+    ----------
+    header_bytes:
+        ``Contents/header.xml`` 의 raw 바이트.
+
+    Returns
+    -------
+    dict[str, StyleEntry]
+        키는 ``hh:style/@id`` 의 문자열 (예: ``"4"``).
+        각 ``StyleEntry`` 는 ``name``, ``para_pr_id``, ``char_pr_id`` 를 담는다.
+
+    Notes
+    -----
+    paraPrIDRef / charPrIDRef 가 누락된 스타일은 결과에서 제외한다
+    (본문 본 변환에 무관한 char/border 전용 스타일일 수 있음).
+    """
+    root = etree.fromstring(header_bytes)
+    table: dict[str, StyleEntry] = {}
+    for style in root.iter(f"{{{HWPML_HEAD_NS}}}style"):
+        sid = style.get("id")
+        name = style.get("name")
+        para_pr_id = style.get("paraPrIDRef")
+        char_pr_id = style.get("charPrIDRef")
+        if sid is None or name is None:
+            continue
+        if para_pr_id is None or char_pr_id is None:
+            continue
+        table[sid] = StyleEntry(
+            name=name, para_pr_id=para_pr_id, char_pr_id=char_pr_id
+        )
+    return table

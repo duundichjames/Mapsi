@@ -28,8 +28,13 @@ __all__ = ["walk"]
 
 
 def walk(blocks: list[Block]) -> list[Block]:
-    """Block 트리를 순회하며 문맥 의존 규칙을 적용한 새 트리를 반환한다.
+    """Block 트리를 순회하며 문맥 의존 규칙을 적용한 새 리스트를 반환한다.
 
     원본 ``blocks`` 는 변형하지 않고 순수 함수로 동작한다.
+
+    현 단계 구현:
+        규칙 1~4 가 모두 표/그림/각주/참고문헌 등의 후속 픽스처와 함께
+        도입되므로, 헤딩/본문만 다루는 본 시점에서는 적용할 규칙이 없어
+        입력을 얕은 복사하여 그대로 반환한다 (= identity 함수).
     """
-    raise NotImplementedError("walk 는 후속 커밋에서 구현된다")
+    return list(blocks)
