@@ -84,14 +84,38 @@ def _load_dotenv_if_available() -> None:
 
     ``mapsi[llm]`` extras 를 설치한 경우에만 ``python-dotenv`` 가 들어
     있으므로, ImportError 시 조용히 skip 한다 (LLM 안 쓰는 사용자에게
-    의존성을 강요하지 않음). 셸 환경 변수가 이미 있으면 덮어쓰지
-    않는다 (`override=False` 가 dotenv 의 기본 동작).
+    의존성을 강요하지 않음).
+
+    동작 규약:
+
+    * **프로젝트의 ``.env`` 가 셸 환경보다 우선한다** (``override=True``).
+      Mapsi 는 CLI 도구이므로 "해당 프로젝트가 명시한 키" 가 권위 있어야
+      하고, 셸에 미리 export 된 다른 도구용 키 (예: OpenAI 호환 엔드포인트
+      뒤에 숨긴 Gemini 키) 와 섞이면 안 된다.
+
+    * 안전망: ``.env`` 가 ``OPENAI_API_KEY`` 를 정의하지만
+      ``OPENAI_API_BASE`` / ``OPENAI_BASE_URL`` 은 정의하지 않은 경우,
+      셸에 미리 박혀 있던 base URL 변수들을 제거한다. 그러지 않으면
+      진짜 OpenAI 키로 비-OpenAI 엔드포인트를 때리는 사고가 난다.
     """
+    import os
+
     try:
-        from dotenv import load_dotenv  # type: ignore
+        from dotenv import dotenv_values, find_dotenv, load_dotenv  # type: ignore
     except ImportError:
         return
-    load_dotenv()
+
+    dotenv_path = find_dotenv(usecwd=True)
+    if not dotenv_path:
+        return
+
+    env_values = dotenv_values(dotenv_path)
+    load_dotenv(dotenv_path, override=True)
+
+    if env_values.get("OPENAI_API_KEY"):
+        for var in ("OPENAI_API_BASE", "OPENAI_BASE_URL"):
+            if var not in env_values and var in os.environ:
+                del os.environ[var]
 
 
 if __name__ == "__main__":

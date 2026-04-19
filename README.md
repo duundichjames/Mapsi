@@ -50,6 +50,14 @@ ANTHROPIC_API_KEY=sk-ant-...
 # OPENAI_API_KEY=sk-...    # 둘 다 있으면 Anthropic 우선
 ```
 
+**`.env` 가 셸 환경보다 우선한다.** 셸에 다른 도구용 키 (예: OpenAI
+호환 엔드포인트로 우회한 Gemini 키) 가 export 되어 있어도 `.env` 의 값이
+이긴다. 또한 `.env` 가 `OPENAI_API_KEY` 만 정의하고 base URL 은 비워둔
+경우, 셸에 박혀 있던 `OPENAI_API_BASE` / `OPENAI_BASE_URL` 도 자동으로
+제거되어 진짜 OpenAI 키가 비-OpenAI 엔드포인트로 새는 것을 방지한다.
+`.env` 검색은 호출한 cwd 부터 위로 올라가며 (`find_dotenv(usecwd=True)`),
+프로젝트 루트의 `.env` 를 찾는다.
+
 CLI 옵션으로 일회성으로 LLM 을 끌 수도 있다:
 
 ```bash
