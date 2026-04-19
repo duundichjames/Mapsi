@@ -84,9 +84,75 @@ def test_no_front_matter_keeps_first_line(tmp_path: Path) -> None:
 
 
 def test_unsupported_token_raises_not_implemented(tmp_path: Path) -> None:
-    md = _write(tmp_path, "- 목록 항목\n")
-    with pytest.raises(NotImplementedError, match="bullet_list_open"):
+    md = _write(tmp_path, "> 인용 단락\n")
+    with pytest.raises(NotImplementedError, match="blockquote_open"):
         parse_markdown(md)
+
+
+def test_bullet_list_single_level(tmp_path: Path) -> None:
+    md = _write(tmp_path, "- 첫 항목\n- 둘째 항목\n")
+    blocks = parse_markdown(md)
+    assert blocks == [
+        Block(role="bullet_list", depth=1, text="첫 항목"),
+        Block(role="bullet_list", depth=1, text="둘째 항목"),
+    ]
+
+
+def test_bullet_list_nested_three_levels(tmp_path: Path) -> None:
+    md = _write(
+        tmp_path,
+        "- A\n"
+        "  - B\n"
+        "    - C\n"
+        "- D\n",
+    )
+    blocks = parse_markdown(md)
+    assert [(b.role, b.depth, b.text) for b in blocks] == [
+        ("bullet_list", 1, "A"),
+        ("bullet_list", 2, "B"),
+        ("bullet_list", 3, "C"),
+        ("bullet_list", 1, "D"),
+    ]
+
+
+def test_bullet_list_with_surrounding_paragraphs(tmp_path: Path) -> None:
+    md = _write(
+        tmp_path,
+        "앞 단락.\n\n"
+        "- 항목1\n"
+        "- 항목2\n\n"
+        "뒷 단락.\n",
+    )
+    blocks = parse_markdown(md)
+    assert [(b.role, b.depth, b.text) for b in blocks] == [
+        ("paragraph", 0, "앞 단락."),
+        ("bullet_list", 1, "항목1"),
+        ("bullet_list", 1, "항목2"),
+        ("paragraph", 0, "뒷 단락."),
+    ]
+
+
+def test_ordered_list_emits_ordered_role(tmp_path: Path) -> None:
+    md = _write(tmp_path, "1. 첫째\n2. 둘째\n")
+    blocks = parse_markdown(md)
+    assert blocks == [
+        Block(role="ordered_list", depth=1, text="첫째"),
+        Block(role="ordered_list", depth=1, text="둘째"),
+    ]
+
+
+def test_round_trip_02_bullet_list_fixture(repo_root: Path) -> None:
+    """``tests/golden/02_bullet_list/input.md`` 가 의도한 6 블록을 만든다."""
+    md = repo_root / "tests" / "golden" / "02_bullet_list" / "input.md"
+    blocks = parse_markdown(md)
+    assert [(b.role, b.depth, b.text) for b in blocks] == [
+        ("paragraph", 0, "목록 앞의 평문 단락입니다."),
+        ("bullet_list", 1, "나의 살던 고향은 꽃피는 산골"),
+        ("bullet_list", 2, "복숭아꽃 살구꽃 아기 진달래"),
+        ("bullet_list", 3, "울긋불긋 꽃대궐 차리인 동네"),
+        ("bullet_list", 1, "두번째 최상위 항목"),
+        ("paragraph", 0, "목록 뒤의 평문 단락입니다."),
+    ]
 
 
 def test_softbreak_becomes_newline(tmp_path: Path) -> None:
