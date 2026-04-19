@@ -426,3 +426,212 @@ class TestBuildFigureCaptionParagraph:
         )
         assert fmt is not None
         assert fmt.get("type") == "DIGIT"
+
+
+# ===========================================================================
+# Phase 7 — 각주 (footnote) 임베드
+# ===========================================================================
+
+
+class TestBuildParagraphWithFootnotes:
+    """``build_paragraph`` 가 ``meta["footnote_marks"]`` 를 보고 hp:footNote 를
+    인라인으로 끼워 emit 하는지 검증.
+
+    참고 구조 (한/글 본가 출력)::
+
+        <hp:p ...>
+          <hp:run charPrIDRef="...">
+            <hp:t>마커 직전</hp:t>
+            <hp:ctrl>
+              <hp:footNote number="N" ...>
+                <hp:subList ...>
+                  <hp:p styleIDRef="각주">
+                    <hp:run>
+                      <hp:ctrl><hp:autoNum num="N" numType="FOOTNOTE"/></hp:ctrl>
+                      <hp:t> 본문</hp:t>
+                    </hp:run>
+                  </hp:p>
+                </hp:subList>
+              </hp:footNote>
+            </hp:ctrl>
+            <hp:t>마커 직후</hp:t>
+          </hp:run>
+        </hp:p>
+    """
+
+    def _make_block(
+        self, text: str, marks: list[dict]
+    ) -> Block:
+        return Block(role="paragraph", text=text, meta={"footnote_marks": marks})
+
+    def test_no_footnote_marks_falls_back_to_plain_run(
+        self, style_map, style_table
+    ) -> None:
+        """마크가 없으면 기존 단일 hp:t 경로와 동일하게 동작."""
+        block = Block(role="paragraph", text="평범", meta={})
+        p = build_paragraph(block, style_map, style_table)
+        run = p.find(f"{HP_NS}run")
+        assert run is not None
+        ts = run.findall(f"{HP_NS}t")
+        ctrls = run.findall(f"{HP_NS}ctrl")
+        assert len(ts) == 1 and ts[0].text == "평범"
+        assert ctrls == []
+
+    def test_single_footnote_splits_text_into_two_t_around_ctrl(
+        self, style_map, style_table
+    ) -> None:
+        """마커 1 개면 hp:t / hp:ctrl(footNote) / hp:t 의 3 자식 시퀀스."""
+        block = self._make_block(
+            "고향은 산골.",
+            [{"kind": "footnote_ref", "offset": 2, "footnote_id": 0,
+              "text": "각주 본문."}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        run = p.find(f"{HP_NS}run")
+        # children 순서 보존 확인
+        kids = list(run)
+        kid_tags = [k.tag for k in kids]
+        assert kid_tags == [f"{HP_NS}t", f"{HP_NS}ctrl", f"{HP_NS}t"]
+        assert kids[0].text == "고향"
+        assert kids[2].text == "은 산골."
+
+    def test_footnote_at_end_omits_trailing_t(
+        self, style_map, style_table
+    ) -> None:
+        """마커가 끝에 있으면 뒤쪽 빈 hp:t 는 emit 안 함."""
+        block = self._make_block(
+            "끝!",
+            [{"kind": "footnote_ref", "offset": 3, "footnote_id": 0,
+              "text": "주."}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        run = p.find(f"{HP_NS}run")
+        kid_tags = [k.tag for k in run]
+        assert kid_tags == [f"{HP_NS}t", f"{HP_NS}ctrl"]
+
+    def test_footnote_at_start_omits_leading_t(
+        self, style_map, style_table
+    ) -> None:
+        """마커가 0 위치에 있으면 앞쪽 빈 hp:t 는 emit 안 함."""
+        block = self._make_block(
+            "본문.",
+            [{"kind": "footnote_ref", "offset": 0, "footnote_id": 0,
+              "text": "주."}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        run = p.find(f"{HP_NS}run")
+        kid_tags = [k.tag for k in run]
+        assert kid_tags == [f"{HP_NS}ctrl", f"{HP_NS}t"]
+
+    def test_multiple_footnotes_alternate_in_order(
+        self, style_map, style_table
+    ) -> None:
+        """마커 N 개면 (N+1) 개 미만의 hp:t 와 N 개의 hp:ctrl 이 교차."""
+        block = self._make_block(
+            "AA BB CC.",
+            [
+                {"kind": "footnote_ref", "offset": 2, "footnote_id": 0,
+                 "text": "일."},
+                {"kind": "footnote_ref", "offset": 5, "footnote_id": 1,
+                 "text": "이."},
+            ],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        run = p.find(f"{HP_NS}run")
+        ctrls = run.findall(f"{HP_NS}ctrl")
+        ts = run.findall(f"{HP_NS}t")
+        assert len(ctrls) == 2
+        assert [t.text for t in ts] == ["AA", " BB", " CC."]
+
+    def test_marks_are_sorted_by_offset_defensively(
+        self, style_map, style_table
+    ) -> None:
+        """offset 이 역순으로 들어와도 정렬 후 emit (안전망)."""
+        block = self._make_block(
+            "AA BB.",
+            [
+                {"kind": "footnote_ref", "offset": 5, "footnote_id": 1,
+                 "text": "이."},
+                {"kind": "footnote_ref", "offset": 2, "footnote_id": 0,
+                 "text": "일."},
+            ],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        run = p.find(f"{HP_NS}run")
+        ts = run.findall(f"{HP_NS}t")
+        assert [t.text for t in ts] == ["AA", " BB", "."]
+
+    def test_footnote_node_uses_footnote_style(
+        self, style_map, style_table
+    ) -> None:
+        """각주 본문 단락은 styles.yaml 의 'footnote' → '각주' 스타일을 쓴다.
+
+        header.xml 에서 '각주' 는 styleIDRef=25, paraPrIDRef=7, charPrIDRef=10.
+        """
+        block = self._make_block(
+            "본문.",
+            [{"kind": "footnote_ref", "offset": 2, "footnote_id": 0,
+              "text": "주."}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        footnote = p.find(f".//{HP_NS}footNote")
+        assert footnote is not None
+        inner_p = footnote.find(f"{HP_NS}subList/{HP_NS}p")
+        assert inner_p is not None
+        assert inner_p.get("styleIDRef") == "25"
+        assert inner_p.get("paraPrIDRef") == "7"
+        inner_run = inner_p.find(f"{HP_NS}run")
+        assert inner_run.get("charPrIDRef") == "10"
+
+    def test_footnote_number_is_footnote_id_plus_one(
+        self, style_map, style_table
+    ) -> None:
+        """hp:footNote@number 와 hp:autoNum@num 은 (id + 1) 의 1-base 값."""
+        block = self._make_block(
+            "AA BB.",
+            [
+                {"kind": "footnote_ref", "offset": 2, "footnote_id": 0,
+                 "text": "일."},
+                {"kind": "footnote_ref", "offset": 5, "footnote_id": 1,
+                 "text": "이."},
+            ],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        notes = p.findall(f".//{HP_NS}footNote")
+        assert [n.get("number") for n in notes] == ["1", "2"]
+        autos = p.findall(f".//{HP_NS}autoNum")
+        assert [a.get("num") for a in autos] == ["1", "2"]
+        assert all(a.get("numType") == "FOOTNOTE" for a in autos)
+
+    def test_footnote_body_text_is_prefixed_with_one_space(
+        self, style_map, style_table
+    ) -> None:
+        """본문 hp:t 앞에 공백 1개 (한/글 표기 관습)."""
+        block = self._make_block(
+            "본문.",
+            [{"kind": "footnote_ref", "offset": 2, "footnote_id": 0,
+              "text": "각주."}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        body_t = p.find(
+            f".//{HP_NS}footNote//{HP_NS}p//{HP_NS}run/{HP_NS}t"
+        )
+        assert body_t is not None
+        assert body_t.text == " 각주."
+
+    def test_footnote_with_empty_body_still_emits_node(
+        self, style_map, style_table
+    ) -> None:
+        """정의가 없는 마크 (text='') 도 hp:footNote 노드는 emit, 본문은 빈 공백."""
+        block = self._make_block(
+            "고아.",
+            [{"kind": "footnote_ref", "offset": 2, "footnote_id": 0,
+              "text": ""}],
+        )
+        p = build_paragraph(block, style_map, style_table)
+        body_t = p.find(
+            f".//{HP_NS}footNote//{HP_NS}p//{HP_NS}run/{HP_NS}t"
+        )
+        # 정의가 없어도 " " (공백 1개) 는 보존 (한/글 패턴 일관성)
+        assert body_t is not None
+        assert body_t.text == " "

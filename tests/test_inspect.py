@@ -143,3 +143,52 @@ class TestCli:
         assert rc == 0
         out = capsys.readouterr().out
         assert out.count("===") >= 4  # 두 파일 × 양쪽 ===
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — 각주 (footnote) 표시
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def footnote_hwpx(repo_root: Path, tmp_path_factory) -> Path:
+    """``tests/golden/07_footnote`` 를 변환한 .hwpx 캐시."""
+    tmp = tmp_path_factory.mktemp("inspect_footnote")
+    out = tmp / "07_footnote.hwpx"
+    work = tmp / "work"
+    work.mkdir()
+    md = repo_root / "tests" / "golden" / "07_footnote" / "input.md"
+    style_map = load_style_map(repo_root / "spec" / "styles.yaml")
+    md_to_hwpx(md_path=md, output_path=out, style_map=style_map, work_dir=work)
+    return out
+
+
+def test_footnote_body_text_excludes_footnote_node_text(
+    footnote_hwpx: Path,
+) -> None:
+    """본문 단락의 텍스트는 hp:footNote 안의 텍스트를 *포함하지 않는다*.
+
+    포함되면 본문 마커 위치마다 각주 본문이 중복 표시되어 검증 시 노이즈가
+    된다 (Phase 7 inspect 정리의 핵심 회귀 가드).
+    """
+    seq = filter_nonempty(extract_paragraph_sequence(footnote_hwpx))
+    body_paragraphs = [info for info in seq if info.style_name == "본문"]
+    assert body_paragraphs, "본문 단락이 1 개 이상 있어야 한다"
+    for info in body_paragraphs:
+        # 각주 본문 텍스트의 식별 토큰이 새지 않아야 함
+        assert "각주 본문" not in info.text, (
+            f"본문 단락 텍스트에 각주 본문이 새고 있음: {info.text!r}"
+        )
+
+
+def test_footnote_paragraphs_appear_separately_with_각주_style(
+    footnote_hwpx: Path,
+) -> None:
+    """각주 본문은 별도 hp:p (styleIDRef=각주) 로 따로 열거된다."""
+    seq = filter_nonempty(extract_paragraph_sequence(footnote_hwpx))
+    fn_paragraphs = [info for info in seq if info.style_name == "각주"]
+    assert len(fn_paragraphs) == 2
+    # 한/글 표기 관습대로 본문 앞에 공백 1개가 붙는다.
+    assert fn_paragraphs[0].text.startswith(" ")
+    assert "첫번째" in fn_paragraphs[0].text
+    assert "두번째" in fn_paragraphs[1].text

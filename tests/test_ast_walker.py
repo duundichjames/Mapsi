@@ -3,8 +3,9 @@
 다루는 규칙:
     - 규칙 1: 표 캡션 승격 (직전 단락 → ``meta["caption"]``, ADR 0001)
     - 규칙 2: 그림 캡션 승격 (직후 단락 → ``meta["caption"]``)
+    - 규칙 4: 각주 본문 흡수 (footnote_def → paragraph mark["text"])
 
-후속 픽스처에서 참고문헌/각주 규칙이 추가되면 케이스를 늘릴 것.
+후속 픽스처에서 참고문헌 규칙이 추가되면 케이스를 늘릴 것.
 """
 
 from __future__ import annotations
@@ -312,3 +313,116 @@ class TestFigureCaptionPromotion:
         assert roles == ["table", "figure"]
         assert result[0].meta["caption"] == "표 캡션"
         assert result[1].meta["caption"] == "그림 캡션"
+
+
+# ---------------------------------------------------------------------------
+# 각주 본문 흡수 (규칙 4)
+# ---------------------------------------------------------------------------
+
+
+def _para_with_footnote(text: str, marks: list[dict]) -> Block:
+    return Block(role="paragraph", text=text, meta={"footnote_marks": marks})
+
+
+def _footnote_def(fid: int, text: str) -> Block:
+    return Block(role="footnote_def", text=text, meta={"footnote_id": fid})
+
+
+class TestFootnoteAbsorption:
+    def test_def_text_merges_into_paragraph_mark(self) -> None:
+        """footnote_def 의 본문이 본문 paragraph 의 마크 ``text`` 로 흡수.
+
+        흡수 후 footnote_def Block 자체는 출력에서 제거된다.
+        """
+        blocks = [
+            _para_with_footnote(
+                "고향은 산골.",
+                [{"kind": "footnote_ref", "offset": 2, "footnote_id": 0}],
+            ),
+            _footnote_def(0, "각주 본문."),
+        ]
+        result = walk(blocks)
+        assert [b.role for b in result] == ["paragraph"]
+        assert result[0].meta["footnote_marks"] == [
+            {
+                "kind": "footnote_ref",
+                "offset": 2,
+                "footnote_id": 0,
+                "text": "각주 본문.",
+            }
+        ]
+
+    def test_multiple_defs_match_by_id(self) -> None:
+        """여러 정의/참조가 ``footnote_id`` 키로 정확히 매칭된다."""
+        blocks = [
+            _para_with_footnote(
+                "AA BB CC.",
+                [
+                    {"kind": "footnote_ref", "offset": 2, "footnote_id": 0},
+                    {"kind": "footnote_ref", "offset": 5, "footnote_id": 1},
+                ],
+            ),
+            _footnote_def(0, "일."),
+            _footnote_def(1, "이."),
+        ]
+        result = walk(blocks)
+        assert len(result) == 1
+        marks = result[0].meta["footnote_marks"]
+        assert [m["text"] for m in marks] == ["일.", "이."]
+
+    def test_unmatched_mark_gets_empty_text(self) -> None:
+        """정의 없는 참조는 ``text=""`` 로 두어 빌더가 빈 각주 emit."""
+        blocks = [
+            _para_with_footnote(
+                "고아 마크.",
+                [{"kind": "footnote_ref", "offset": 5, "footnote_id": 99}],
+            ),
+        ]
+        result = walk(blocks)
+        assert result[0].meta["footnote_marks"][0]["text"] == ""
+
+    def test_orphan_def_without_ref_is_dropped_silently(self) -> None:
+        """참조 없는 정의는 출력에서 사라진다 (조용히)."""
+        blocks = [
+            Block(role="paragraph", text="각주 없는 본문."),
+            _footnote_def(0, "참조 없는 정의."),
+        ]
+        result = walk(blocks)
+        assert [b.role for b in result] == ["paragraph"]
+        assert result[0].text == "각주 없는 본문."
+
+    def test_paragraph_without_marks_is_passthrough(self) -> None:
+        """각주 마크가 없는 단락은 변경 없이 그대로 통과 (deepcopy 회피)."""
+        blocks = [
+            Block(role="paragraph", text="평범한 단락."),
+            _footnote_def(0, "참조 없음"),
+        ]
+        result = walk(blocks)
+        assert result[0] is blocks[0]  # 동일 객체
+
+    def test_first_def_wins_when_id_collides(self) -> None:
+        """같은 id 의 정의가 두 번 나오면 처음 정의가 우선."""
+        blocks = [
+            _para_with_footnote(
+                "본문.",
+                [{"kind": "footnote_ref", "offset": 2, "footnote_id": 0}],
+            ),
+            _footnote_def(0, "처음 정의."),
+            _footnote_def(0, "나중 정의."),
+        ]
+        result = walk(blocks)
+        assert result[0].meta["footnote_marks"][0]["text"] == "처음 정의."
+
+    def test_input_is_not_mutated(self) -> None:
+        """원본 blocks 의 마크 dict 가 변경되지 않아야 한다 (순수 함수)."""
+        original_mark = {
+            "kind": "footnote_ref",
+            "offset": 2,
+            "footnote_id": 0,
+        }
+        blocks = [
+            _para_with_footnote("AA.", [original_mark]),
+            _footnote_def(0, "정의."),
+        ]
+        walk(blocks)
+        assert "text" not in original_mark

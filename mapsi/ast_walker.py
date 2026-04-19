@@ -19,8 +19,16 @@
     - 헤딩 텍스트가 "참고문헌" 또는 "References" 와 일치하면 그 이후의
       평문 단락들의 역할을 ``reference`` 로 변경한다 (다음 헤딩까지).
 
-규칙 4) 각주 정의 분리 (후속)
-    - ``[^N]: ...`` 정의를 본문에서 떼어 별도 ``footnote`` 블록으로 만든다.
+규칙 4) 각주 본문 흡수
+    - ``role="footnote_def"`` Block 들을 모아 ``footnote_id`` 키로 색인한 뒤,
+      본문 paragraph 의 ``meta["footnote_marks"]`` 항목 각각에 매칭되는
+      ``text`` 를 채워 넣는다 (``mark["text"] = "각주 본문"``). 정의 Block
+      자체는 출력 리스트에서 *제거* 된다 (한/글에서 각주 본문은 본문 안의
+      ``hp:footNote`` 노드로 임베드되며 별도 단락이 아님).
+    - 매칭되는 정의가 없는 마크는 ``mark["text"] = ""`` 로 두어 빌더가
+      빈 각주를 emit 하도록 한다 (마크다운 작성 실수 방어).
+    - 본 규칙은 표/그림 캡션 승격과 독립 — 어떤 순서로 적용해도 결과는
+      동일하므로 마지막에 한 번 수행한다.
 """
 
 from __future__ import annotations
@@ -61,12 +69,14 @@ def walk(blocks: list[Block]) -> list[Block]:
     적용 순서:
         1) 표 캡션 승격 (직전 단락 → 표 ``meta["caption"]``)
         2) 그림 캡션 승격 (직후 단락 → 그림 ``meta["caption"]``)
+        3) 각주 본문 흡수 (footnote_def → paragraph mark["text"])
 
-    두 규칙은 서로 다른 정규식과 역할을 다루므로 순서 상관없이 동일한
-    결과를 산출한다. 현 구현은 표 → 그림 순.
+    각 규칙은 서로 다른 Block 역할을 다루므로 순서 상관없이 동일한 결과를
+    산출한다. 현 구현은 표 → 그림 → 각주 순.
     """
     out = _promote_table_captions(blocks)
     out = _promote_figure_captions(out)
+    out = _absorb_footnote_defs(out)
     return out
 
 
@@ -125,6 +135,44 @@ def _promote_figure_captions(blocks: list[Block]) -> list[Block]:
                 continue
         out.append(blk)
         i += 1
+    return out
+
+
+def _absorb_footnote_defs(blocks: list[Block]) -> list[Block]:
+    """규칙 4 — ``footnote_def`` Block 의 본문을 본문 마크에 병합.
+
+    1단계: 모든 ``footnote_def`` 를 한 번 훑어 ``footnote_id`` → ``text``
+    사전을 만든다. 같은 id 가 두 번 나오면 *처음* 정의를 채택한다 (= 본문
+    안에서 해당 라벨을 처음 정의한 것이 우선; 마크다운 plugin 도 동일
+    방향). 2단계: 각 paragraph 의 ``meta["footnote_marks"]`` 항목에 매칭
+    텍스트를 ``mark["text"]`` 로 채워 넣는다 (해당 id 에 정의가 없으면
+    빈 문자열). 3단계: 출력 리스트에서 ``footnote_def`` Block 들은 제외.
+
+    원본 Block 의 ``meta`` 보호를 위해, 마크가 있는 paragraph 만
+    ``deepcopy`` 한다.
+    """
+    defs_by_id: dict[int, str] = {}
+    for blk in blocks:
+        if blk.role != "footnote_def":
+            continue
+        fid = blk.meta.get("footnote_id")
+        if fid is None or fid in defs_by_id:
+            continue
+        defs_by_id[int(fid)] = blk.text
+
+    out: list[Block] = []
+    for blk in blocks:
+        if blk.role == "footnote_def":
+            continue
+        marks = blk.meta.get("footnote_marks") if blk.meta else None
+        if not marks:
+            out.append(blk)
+            continue
+        new_blk = deepcopy(blk)
+        for mark in new_blk.meta["footnote_marks"]:
+            fid = mark.get("footnote_id")
+            mark["text"] = defs_by_id.get(int(fid), "") if fid is not None else ""
+        out.append(new_blk)
     return out
 
 

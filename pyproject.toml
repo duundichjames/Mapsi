@@ -25,6 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "markdown-it-py>=3.0",
+    "mdit-py-plugins>=0.4",
     "lxml>=5.0",
     "pyyaml>=6.0",
     "Pillow>=10.0",

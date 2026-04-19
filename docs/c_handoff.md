@@ -33,9 +33,9 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
 - 체크포인트 1 통과 (빈 마크다운 → 한/글 오픈 확인)
 - B 가 C 영역까지 임시로 모든 파일에 스텁 또는 동작 구현을 박아둠
 - 작업 브랜치 `feature/core-engine` 에 누적 (heading/list/blockquote/code/
-  table/figure 까지 머지됨)
-- 테스트 187/187 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
-  06_figure 까지)
+  table/figure/footnote 까지 머지됨)
+- 테스트 212/212 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
+  06_figure + 07_footnote 까지)
 - 그림은 2 단계로 분리 진행됐고 둘 다 완료:
   - **Phase 6a (완료)** — 파서/walker/빌더가 그림 단락과 캡션을 인식.
     이미지 바이너리 임베드 없음, `그림` 스타일의 자리표시 단락 + 별도
@@ -46,6 +46,11 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
     계약 4 `update_manifest` 가 B 임시 구현으로 채워져 있음
     (`mapsi/builder/bindata.py`, `mapsi/builder/manifest.py`). C 가
     프로덕션 품질로 재작성하면 됨 — 인터페이스만 같으면 코어 변경 없음
+- 각주 (Pandoc 확장 `[^id]`): `mdit-py-plugins.footnote` 플러그인으로 파싱.
+  본문 단락 안에 `hp:footNote` 노드를 인라인 임베드 (한/글 본가 출력과
+  동일 구조). 원문 라벨은 무시되고 등장 순서로 1, 2, 3 ... 자동 부여.
+  자세한 구조는 `mapsi/builder/elements.py` 의 `_build_footnote` docstring
+  참고.
 - 결정 기록은 `docs/decisions/` (현재 `0001-table-caption-promotion.md` 1 건,
   그림 캡션 정책도 동일 ADR 의 일반화 적용)
 

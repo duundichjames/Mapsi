@@ -83,6 +83,8 @@ def _extract_paragraph_text(p_element: etree._Element) -> str:
 
     - ``hp:tbl``: 표 셀 안의 단락
     - ``hp:pic``: 그림 캡션 (``hp:pic > hp:caption > hp:subList > hp:p``)
+    - ``hp:footNote``: 각주 본문 단락 (``hp:footNote > hp:subList > hp:p``).
+      각주 본문은 별도의 "각주" 스타일 단락으로 따로 열거된다.
 
     그림 단락 (``hp:pic`` 가 직접 자손에 있음) 은 본체에 텍스트가 없으므로
     검증 가시성을 위해 ``hp:pic > hp:shapeComment`` (대체 텍스트) 를 합성
@@ -90,6 +92,7 @@ def _extract_paragraph_text(p_element: etree._Element) -> str:
     """
     pic_tag = f"{{{HWPML_PARA_NS}}}pic"
     tbl_tag = f"{{{HWPML_PARA_NS}}}tbl"
+    footnote_tag = f"{{{HWPML_PARA_NS}}}footNote"
     parts: list[str] = []
     has_pic = False
     for t_node in p_element.iter(f"{{{HWPML_PARA_NS}}}t"):
@@ -98,6 +101,8 @@ def _extract_paragraph_text(p_element: etree._Element) -> str:
         if _is_descendant_of_tag(t_node, p_element, tbl_tag):
             continue
         if _is_descendant_of_tag(t_node, p_element, pic_tag):
+            continue
+        if _is_descendant_of_tag(t_node, p_element, footnote_tag):
             continue
         parts.append(t_node.text)
     if not parts:
