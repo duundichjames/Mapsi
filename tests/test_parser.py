@@ -84,9 +84,87 @@ def test_no_front_matter_keeps_first_line(tmp_path: Path) -> None:
 
 
 def test_unsupported_token_raises_not_implemented(tmp_path: Path) -> None:
-    md = _write(tmp_path, "> 인용 단락\n")
-    with pytest.raises(NotImplementedError, match="blockquote_open"):
+    """수평선(``hr``) 토큰은 아직 미지원이며 명시적 에러를 내야 한다."""
+    md = _write(tmp_path, "한 줄.\n\n---\n\n다른 줄.\n")
+    with pytest.raises(NotImplementedError, match="hr"):
         parse_markdown(md)
+
+
+def test_blockquote_single_paragraph(tmp_path: Path) -> None:
+    md = _write(tmp_path, "> 인용 한 줄.\n")
+    blocks = parse_markdown(md)
+    assert blocks == [Block(role="blockquote", text="인용 한 줄.")]
+
+
+def test_blockquote_multiple_paragraphs(tmp_path: Path) -> None:
+    """인용 안의 여러 단락은 각각 blockquote 블록으로 분리된다."""
+    md = _write(tmp_path, "> 첫째 단락.\n>\n> 둘째 단락.\n")
+    blocks = parse_markdown(md)
+    assert blocks == [
+        Block(role="blockquote", text="첫째 단락."),
+        Block(role="blockquote", text="둘째 단락."),
+    ]
+
+
+def test_blockquote_surrounded_by_paragraphs(tmp_path: Path) -> None:
+    md = _write(
+        tmp_path,
+        "앞 단락.\n\n"
+        "> 인용문.\n\n"
+        "뒷 단락.\n",
+    )
+    blocks = parse_markdown(md)
+    assert [(b.role, b.text) for b in blocks] == [
+        ("paragraph", "앞 단락."),
+        ("blockquote", "인용문."),
+        ("paragraph", "뒷 단락."),
+    ]
+
+
+def test_fenced_code_block_one_line_per_block(tmp_path: Path) -> None:
+    md = _write(
+        tmp_path,
+        "```python\n"
+        "print('hello')\n"
+        "print('world')\n"
+        "```\n",
+    )
+    blocks = parse_markdown(md)
+    assert [(b.role, b.text) for b in blocks] == [
+        ("code_block", "print('hello')"),
+        ("code_block", "print('world')"),
+    ]
+    assert blocks[0].meta.get("info") == "python"
+    assert "info" not in blocks[1].meta
+
+
+def test_fenced_code_block_with_blank_line_inside(tmp_path: Path) -> None:
+    """코드 블록 안의 빈 줄도 빈 텍스트의 code_block 으로 보존된다."""
+    md = _write(
+        tmp_path,
+        "```\n"
+        "a\n"
+        "\n"
+        "b\n"
+        "```\n",
+    )
+    blocks = parse_markdown(md)
+    assert [(b.role, b.text) for b in blocks] == [
+        ("code_block", "a"),
+        ("code_block", ""),
+        ("code_block", "b"),
+    ]
+
+
+def test_indented_code_block(tmp_path: Path) -> None:
+    """4칸 들여쓰기 코드 블록도 동일하게 줄당 1 Block."""
+    md = _write(tmp_path, "도입 단락.\n\n    foo()\n    bar()\n")
+    blocks = parse_markdown(md)
+    assert [(b.role, b.text) for b in blocks] == [
+        ("paragraph", "도입 단락."),
+        ("code_block", "foo()"),
+        ("code_block", "bar()"),
+    ]
 
 
 def test_bullet_list_single_level(tmp_path: Path) -> None:
