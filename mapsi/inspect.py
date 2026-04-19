@@ -75,16 +75,37 @@ def extract_style_id_to_name(header_xml: bytes) -> dict[str, str]:
 
 
 def _extract_paragraph_text(p_element: etree._Element) -> str:
-    """``hp:p`` 1 개에서 본문 텍스트를 결합한다.
+    """``hp:p`` 1 개에서 *자기 자신의* 본문 텍스트만 결합한다.
 
-    ``hp:run > hp:t`` 노드들의 텍스트를 순서대로 이어 붙임.
-    포맷팅(굵게/기울임 등) 은 무시하고 평문만 추출.
+    ``hp:run > hp:t`` 노드들의 텍스트를 순서대로 이어 붙인다. 단, 표
+    (``hp:tbl``) 안에 있는 후손 ``hp:t`` 는 별도 ``hp:p`` 로 따로 열거되므로
+    이 함수에서는 제외한다 (이중 카운트 방지).
+
+    구체적으로 ``hp:tbl`` 자손인 ``hp:t`` 는 건너뛴다. 이 검사를 위해
+    ``getparent()`` 체인을 ``p_element`` 까지 거슬러 올라가며 ``hp:tbl``
+    경계를 만나는지 확인한다.
     """
+    tbl_tag = f"{{{HWPML_PARA_NS}}}tbl"
     parts: list[str] = []
     for t_node in p_element.iter(f"{{{HWPML_PARA_NS}}}t"):
-        if t_node.text:
-            parts.append(t_node.text)
+        if not t_node.text:
+            continue
+        if _is_descendant_of_tag(t_node, p_element, tbl_tag):
+            continue
+        parts.append(t_node.text)
     return "".join(parts)
+
+
+def _is_descendant_of_tag(
+    node: etree._Element, ancestor_root: etree._Element, tag: str
+) -> bool:
+    """``node`` 가 ``ancestor_root`` 까지 거슬러 올라가는 사이 ``tag`` 를 만나는가."""
+    cur = node.getparent()
+    while cur is not None and cur is not ancestor_root:
+        if cur.tag == tag:
+            return True
+        cur = cur.getparent()
+    return False
 
 
 def extract_paragraph_sequence(hwpx_path: str | Path) -> list[ParagraphInfo]:

@@ -44,7 +44,7 @@ from typing import Any
 from lxml import etree
 
 from ..parser import Block
-from .elements import build_paragraph
+from .elements import build_paragraph, build_table_wrapper
 from .header import StyleEntry
 
 
@@ -98,8 +98,13 @@ def build_section(
     _strip_text_content(secpr_host)
 
     # 3. 우리 변환 결과 블록들을 호스트 단락 뒤에 순서대로 추가.
+    #    role 별 dispatch: 표는 wrapper paragraph 안에 hp:tbl 을 품기 때문에
+    #    별도 빌더로 보낸다. 그 외 역할은 모두 단순 hp:p 1 개로 매핑된다.
     for block in blocks:
-        new_root.append(build_paragraph(block, style_map, style_table))
+        if block.role == "table":
+            new_root.append(build_table_wrapper(block, style_map, style_table))
+        else:
+            new_root.append(build_paragraph(block, style_map, style_table))
 
     return etree.tostring(
         new_root,

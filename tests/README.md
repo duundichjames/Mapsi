@@ -1,0 +1,232 @@
+# Mapsi 테스트 가이드
+
+본 디렉토리는 Mapsi 변환기의 자동 회귀 테스트를 보관함. 모든 테스트는
+`pytest` 로 실행되며, 단위 테스트와 통합/회귀 테스트로 구성됨.
+
+## 빠른 실행
+
+```bash
+pytest                          # 전체 (현재 124개)
+pytest tests/test_parser.py     # 파일 단위
+pytest -k golden                # 이름 매칭
+pytest -k "01_headings"         # 특정 픽스처만
+pytest -v                       # 상세 출력
+```
+
+설치는 `pip install -e ".[dev]"` 로 pytest 포함된 개발 의존성을 설치해야 함.
+
+## 파이프라인 개관
+
+Mapsi 의 변환은 5 단계 파이프라인이며, 각 단계는 독립 모듈로 분리됨.
+테스트도 단계별로 묶여 있음.
+
+```
+입력 .md
+   │
+   ▼  ┌──────────────────────────────────────────────┐
+   │  │ ① 파서   mapsi/parser.py                     │  ← test_parser.py
+   │  │   "# 제목" → Block(role="heading", depth=1)  │
+   │  └──────────────────────────────────────────────┘
+   ▼
+   │  ┌──────────────────────────────────────────────┐
+   │  │ ② AST walker   mapsi/ast_walker.py           │  (현재는 identity)
+   │  └──────────────────────────────────────────────┘
+   ▼
+   │  ┌──────────────────────────────────────────────┐
+   │  │ ③ 스타일 룩업   mapsi/styles.py + styles.yaml │  ← test_styles.py
+   │  │   ("heading", 1) → "개요 1"  (이름)           │
+   │  └──────────────────────────────────────────────┘
+   ▼
+   │  ┌──────────────────────────────────────────────┐
+   │  │ ④ 빌더   mapsi/builder/                      │  ← test_elements.py
+   │  │   "개요 1" + header.xml 룩업                  │  ← test_header.py
+   │  │   → <hp:p styleIDRef="2" ...>제목</hp:p>      │
+   │  └──────────────────────────────────────────────┘
+   ▼
+   │  ┌──────────────────────────────────────────────┐
+   │  │ ⑤ 패키저   mapsi/packager.py                 │  ← test_smoke.py
+   │  │   work/ 디렉토리 → ZIP (.hwpx)               │
+   │  └──────────────────────────────────────────────┘
+   ▼
+출력 .hwpx
+   │
+   ▼  ┌──────────────────────────────────────────────┐
+      │ ① ~ ⑤ 끝단 회귀                              │  ← test_golden.py
+      │ .hwpx 검사 도구                               │  ← test_inspect.py
+      │                                              │  ← test_golden_helper.py
+      └──────────────────────────────────────────────┘
+```
+
+## 테스트 파일 일람
+
+| 파일 | 개수 | 단계 | 검증 대상 |
+|---|---:|---|---|
+| `test_parser.py` | 29 | ① 파서 | 마크다운 → `Block` 리스트 변환 |
+| `test_ast_walker.py` | 17 | ② 워크 | 표 캡션 승격 등 문맥 의존 규칙 |
+| `test_styles.py` | 28 | ③ 스타일 룩업 | `(role, depth) → 스타일 이름` 매핑 |
+| `test_header.py` | 3 | ④ 빌더 (헤더) | `header.xml` 로드 + 스타일표 파싱 |
+| `test_elements.py` | 18 | ④ 빌더 (요소) | `Block` → `<hp:p>` / `<hp:tbl>` XML 생성 |
+| `test_smoke.py` | 8 | ⑤ 패키저 | `.hwpx` ZIP 형식 정합성 |
+| `test_inspect.py` | 10 | 검사 도구 | `mapsi.inspect` 라이브러리 + CLI |
+| `test_golden_helper.py` | 6 | 검사 도구 | `tests/_golden.py` 헬퍼 |
+| `test_golden.py` | 5 | 끝단 회귀 | `.md` → `.hwpx` 전 파이프라인 |
+
+총 **124개**.
+
+---
+
+## 단계별 상세
+
+### ① 파서 — `test_parser.py` (26개)
+
+**대상**: `mapsi/parser.py`의 `parse_markdown(md_text) -> list[Block]`
+
+마크다운 문자열을 `markdown-it-py` 토큰으로 자르고, 우리 내부 자료구조인
+`Block(role, depth, text, children, meta)` 의 평탄한 리스트로 변환함.
+
+검증 케이스:
+- 기초: 빈 입력 / 단일 단락 / 다중 단락
+- 헤딩: h1~h6 + 본문/제목 혼합
+- YAML front matter 제거
+- 미지원 토큰(`hr`) → `NotImplementedError`
+- Blockquote: 단일/다중/주변 단락 혼합
+- 코드 블록: 펜스드(한 줄당 1 Block) / 빈 줄 보존 / 들여쓰기 코드
+- 글머리 목록: 1단계 / 3단계 중첩 / 주변 단락
+- 번호 목록
+- softbreak → 개행
+- 라운드트립: 골든 픽스처 01/02 의 `Block` 시퀀스 검증
+
+### ② AST walker — `test_ast_walker.py` (17개)
+
+**대상**: `mapsi/ast_walker.py` 의 `walk()` 와 `TABLE_CAPTION_PATTERN`.
+
+파서가 만든 평탄 Block 리스트에 문맥 의존 규칙을 적용. 현재는 표 캡션
+승격 (ADR 0001) 1 가지만 구현. 후속 픽스처에서 그림 캡션 / 참고문헌 /
+각주 규칙이 추가되면 케이스가 늘어남.
+
+검증 케이스:
+- `TestCaptionPattern` (7): 정규식 매치 — 한국어 / 영어 / 다자리 번호 /
+  마침표 없음 / 공백 없음 / 소문자 `table` / 줄 중간 매치 안 됨
+- `TestCaptionPromotion` (10): 직전 단락 흡수 / 영어 캡션 /
+  사용자 번호 무시 / 비매치 보존 / 헤딩 비승격 / 이미 캡션 있는 표 보존 /
+  접두사만 있는 단락 비승격 / 첫 블록 표 / 입력 불변성 / 다중 표
+
+### ③ 스타일 룩업 — `test_styles.py` (28개)
+
+**대상**: `mapsi/styles.py` 의 `style_name(map, role, depth) -> str`
++ `mapsi/config.py` 의 `load_style_map(path)`
+
+`spec/styles.yaml` 의 정책 표가 잘 로드되고, `(role, depth)` 가 올바른
+한/글 스타일 *이름* 으로 매핑되는지 확인. 이 단계는 ID 를 모름.
+
+검증 케이스:
+- `TestLoadStyleMap`: 13개 역할 존재 / 깊이 키 정수 정규화 / 단순 역할 값 문자열
+- `TestStyleName`: 22개 역할별 이름 매핑 + unknown role/depth 에러
+  + paragraph 의 depth 무시
+
+### ④ 빌더 — `test_header.py` + `test_elements.py` (3 + 8 = 11개)
+
+**대상**: `mapsi/builder/header.py`, `mapsi/builder/elements.py`
+
+#### 헤더 (`test_header.py` 3개)
+- `templates/Contents/header.xml` 바이트 로드
+- `parse_style_table()` 가 `name -> StyleEntry(id, paraPrIDRef, charPrIDRef)`
+  매핑을 반환
+- 알려진 스타일 ("본문", "개요 1" 등) 의 속성 정확성
+
+#### 요소 (`test_elements.py` 8개)
+- 본문 단락이 `styleIDRef=3, paraPrIDRef=18, charPrIDRef=7` 적용
+- h1~h5 가 각각 "개요 1"~"개요 5" 스타일 적용 (5개)
+- 빈 텍스트 처리 (run 은 만들되 `<hh:t>` 생략)
+- `<hp:p>` 의 필수 속성 누락 없음
+
+### ⑤ 패키저 / 스모크 — `test_smoke.py` (8개)
+
+**대상**: `mapsi/packager.py` 의 `package_hwpx(work_dir, output)` +
+전체 파이프라인이 만든 ZIP 의 형식 정합성.
+
+스타일 정확성과는 무관, "한/글이 열 수 있는 ZIP 인가" 만 검증.
+
+- `TestSmokePackaging` (6)
+  - 출력 파일 존재 + 비어있지 않음
+  - 유효한 ZIP
+  - **mimetype 이 첫 엔트리이고 STORED(무압축)** ← HWPX 표준
+  - 필수 5개 파일 (`mimetype`, `version.xml`, `Contents/header.xml`,
+    `Contents/section0.xml`, `META-INF/container.xml`) 존재
+  - mimetype 시그니처 = `application/hwp+zip`
+  - `section0.xml` 이 well-formed XML
+- `TestSmokeCli` (2)
+  - `mapsi` 명령과 `python -m mapsi` 동일 출력
+  - CLI 인자 처리
+
+### 검사 도구 — `test_inspect.py` + `test_golden_helper.py` (10 + 6 = 16개)
+
+**대상**: `mapsi/inspect.py` (라이브러리 + CLI), `tests/_golden.py` (얇은 어댑터)
+
+검증 도구가 틀리면 골든 회귀 결과를 신뢰할 수 없으므로 별도 단위 테스트
+필수.
+
+- `mapsi.inspect` 라이브러리: `extract_paragraph_sequence`,
+  `extract_style_id_to_name`, `filter_nonempty`
+- `mapsi.inspect` CLI: 기본 출력, `--styles` 정의 요약, `--all` 빈 단락 포함,
+  없는 파일 에러, 다중 파일 처리
+- `tests/_golden.py`: `mapsi.inspect` 재익스포트 + `load_expected` 로더
+
+### 끝단 회귀 — `test_golden.py` (4개)
+
+**대상**: 전체 파이프라인 (`mapsi.converter.md_to_hwpx`).
+
+`tests/golden/<name>/input.md` 를 변환하여 나온 `.hwpx` 의 단락 시퀀스를
+`expected.yaml` 과 비교. 비교는 *스타일 이름* 기준 (raw ID 가 아님).
+픽스처 자체에 대한 자세한 규약은 [`golden/README.md`](./golden/README.md)
+참고.
+
+현재 픽스처:
+| 픽스처 | 검증 내용 |
+|---|---|
+| `01_headings` | 본문 + 제목 1~5 |
+| `02_bullet_list` | 글머리 목록 3단계 중첩 |
+| `03_ordered_list` | 번호 목록 2단계 중첩 |
+| `04_blockquote_code` | 인용 + 코드 블록 (들여쓰기 보존) |
+| `05_table` | GFM 표 + 캡션 승격 (ADR 0001) |
+
+---
+
+## 공용 유틸
+
+### `conftest.py`
+세션 스코프 픽스처 4종:
+- `repo_root` — 리포지토리 루트 경로
+- `samples_dir` — `samples/` 경로
+- `templates_dir` — `templates/` 경로
+- `spec_dir` — `spec/` 경로
+
+### `_golden.py`
+`mapsi.inspect` 의 핵심 헬퍼를 재익스포트하고, `expected.yaml` 로더만
+추가로 제공. 기존 테스트 호환성을 위해 유지.
+
+### `golden/`
+끝단 회귀용 입력/기대 출력 픽스처. 각 디렉토리에 `input.md` +
+`expected.yaml`. 추가 절차는 [`golden/README.md`](./golden/README.md) 참조.
+
+---
+
+## 새 테스트를 추가할 때
+
+1. **단위 테스트 우선** — 단계 한 곳에서 닫히는 케이스는 해당
+   `test_<단계>.py` 에 추가. 새 파이프라인 단계가 생기면 새 파일 분리.
+2. **회귀 테스트는 끝단** — 여러 단계가 얽힌 케이스는 `golden/<NN_name>/`
+   픽스처로 추가. `test_golden.py` 가 자동 발견.
+3. **검사 도구 변경** — `mapsi/inspect.py` 를 수정하면 `test_inspect.py` 와
+   `test_golden_helper.py` 둘 다 손봐야 할 수 있음 (후자는 얇은 어댑터).
+4. 픽스처 파일은 모두 UTF-8 / LF / front matter 없는 순수 본문.
+
+## 자주 쓰는 명령
+
+```bash
+pytest                                  # 전부
+pytest -x                               # 첫 실패에서 멈춤
+pytest --collect-only -o addopts=""     # 테스트 트리 출력
+pytest -k "heading and not bullet"      # 키워드 필터
+pytest tests/test_parser.py::test_round_trip_01_headings_fixture
+```

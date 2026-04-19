@@ -32,8 +32,10 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
 
 - 체크포인트 1 통과 (빈 마크다운 → 한/글 오픈 확인)
 - B 가 C 영역까지 임시로 모든 파일에 스텁 또는 동작 구현을 박아둠
-- 작업 브랜치, `feature/core-engine`
-- 테스트 36/36 통과
+- 작업 브랜치, `feature/core-engine` (heading/list/blockquote/code 기능 머지됨),
+  `feature/05-table` (표 + 캡션 작업 중)
+- 테스트 124/124 통과 (체크포인트 1 + 04_blockquote_code + 05_table 까지)
+- 결정 기록은 `docs/decisions/` (현재 `0001-table-caption-promotion.md` 1 건)
 
 ---
 

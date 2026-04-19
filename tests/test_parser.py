@@ -219,6 +219,56 @@ def test_ordered_list_emits_ordered_role(tmp_path: Path) -> None:
     ]
 
 
+def test_simple_table_emits_single_block(tmp_path: Path) -> None:
+    """GFM 표 1 개는 ``role='table'`` Block 1 개로 평탄화된다."""
+    md = _write(
+        tmp_path,
+        "| a | b |\n"
+        "|---|---|\n"
+        "| 1 | 2 |\n"
+        "| 3 | 4 |\n",
+    )
+    blocks = parse_markdown(md)
+    assert len(blocks) == 1
+    blk = blocks[0]
+    assert blk.role == "table"
+    assert blk.meta["rows"] == [["a", "b"], ["1", "2"], ["3", "4"]]
+    assert blk.meta["caption"] is None  # 파서는 캡션 결정 안 함
+
+
+def test_table_with_surrounding_paragraphs(tmp_path: Path) -> None:
+    md = _write(
+        tmp_path,
+        "앞 단락.\n\n"
+        "| h1 | h2 |\n"
+        "|----|----|\n"
+        "| x  | y  |\n\n"
+        "뒷 단락.\n",
+    )
+    blocks = parse_markdown(md)
+    roles = [b.role for b in blocks]
+    assert roles == ["paragraph", "table", "paragraph"]
+    assert blocks[1].meta["rows"] == [["h1", "h2"], ["x", "y"]]
+
+
+def test_table_caption_is_not_promoted_by_parser(tmp_path: Path) -> None:
+    """파서 단계에서는 캡션 패턴 단락이 그대로 paragraph 로 남는다.
+
+    캡션 승격은 ``ast_walker.walk()`` 의 책임 (ADR 0001).
+    """
+    md = _write(
+        tmp_path,
+        "표 1. 분기별 매출\n\n"
+        "| q | v |\n"
+        "|---|---|\n"
+        "| 1 | 100 |\n",
+    )
+    blocks = parse_markdown(md)
+    assert blocks[0] == Block(role="paragraph", text="표 1. 분기별 매출")
+    assert blocks[1].role == "table"
+    assert blocks[1].meta["caption"] is None
+
+
 def test_round_trip_02_bullet_list_fixture(repo_root: Path) -> None:
     """``tests/golden/02_bullet_list/input.md`` 가 의도한 6 블록을 만든다."""
     md = repo_root / "tests" / "golden" / "02_bullet_list" / "input.md"
