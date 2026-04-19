@@ -99,11 +99,20 @@ def _try_llm(latex: str, display: bool) -> str | None:
 
 
 _SYSTEM_PROMPT = (
-    "너는 LaTeX 수식을 한/글 HNC 수식 문법으로 변환하는 전문가이다. "
+    "너는 LaTeX 수식을 한/글 HNC 수식 문법으로 변환하는 변환기다.\n"
     "응답에는 변환된 HNC 수식 문자열만 포함하고, 설명·주석·코드 블록·"
-    "마커 (`[hnc 수식]` 등) 는 절대 포함하지 마라. "
-    "예시: `\\frac{a}{b}` → `{a} over {b}`, `\\sqrt{x}` → `sqrt {x}`, "
-    "`x^2` → `x^2`, `\\sum_{i=1}^{n}` → `sum _{i=1} ^{n}`."
+    "마커 (`[hnc 수식]` 등) 는 절대 포함하지 마라.\n\n"
+    "예시:\n"
+    "LaTeX: \\frac{a}{b}\n"
+    "HNC: {a} over {b}\n\n"
+    "LaTeX: \\sqrt{x}\n"
+    "HNC: sqrt x\n\n"
+    "LaTeX: \\alpha + \\beta\n"
+    "HNC: alpha + beta\n\n"
+    "LaTeX: \\sum_{i=1}^{n} a_i\n"
+    "HNC: sum from {i=1} to n a_i\n\n"
+    "LaTeX: \\int_0^1 x^2 dx\n"
+    "HNC: int from 0 to 1 x^2 dx"
 )
 
 
