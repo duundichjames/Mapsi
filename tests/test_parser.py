@@ -581,3 +581,82 @@ class TestDisplayEquation:
         assert blocks[2].text == ""
         eq2 = blocks[2].meta["equation_marks"]
         assert len(eq2) == 1 and eq2[0]["display"] is True
+
+
+# --- inline 서식 (Phase 10, ADR 0004) -------------------------------------
+
+
+class TestInlineFormattingMarks:
+    """``**bold**``, ``*em*``, ``~~s~~``, ``` `code` ``, ``[]()`` 의 파싱."""
+
+    def test_bold_creates_inline_mark(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "안녕 **굵은** 텍스트.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "안녕 굵은 텍스트."
+        assert b.meta["inline_marks"] == [
+            {"kind": "bold", "start": 3, "end": 5}
+        ]
+
+    def test_italic_creates_inline_mark(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "*기울인* 텍스트.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "기울인 텍스트."
+        assert b.meta["inline_marks"] == [
+            {"kind": "italic", "start": 0, "end": 3}
+        ]
+
+    def test_strikethrough_creates_inline_mark(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "~~취소~~ 됐다.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "취소 됐다."
+        assert b.meta["inline_marks"] == [
+            {"kind": "strike", "start": 0, "end": 2}
+        ]
+
+    def test_inline_code_absorbs_content_into_text(self, tmp_path: Path) -> None:
+        """`code` 의 내용은 평문에 흡수되고, 그 범위가 mark 로 기록."""
+        md = _write(tmp_path, "함수 `foo()` 호출.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "함수 foo() 호출."
+        assert b.meta["inline_marks"] == [
+            {"kind": "code", "start": 3, "end": 8}
+        ]
+
+    def test_link_label_kept_url_dropped(self, tmp_path: Path) -> None:
+        """ADR 0004 결정 1: 라벨만 평문에 들어가고 URL 은 폐기, mark 도 없음."""
+        md = _write(tmp_path, "[GitHub](https://github.com) 링크.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "GitHub 링크."
+        assert "inline_marks" not in b.meta
+
+    def test_nested_bold_italic_emits_two_marks(self, tmp_path: Path) -> None:
+        """``***x***`` 는 bold 와 italic 두 mark 가 동일 범위로 등장."""
+        md = _write(tmp_path, "***굵고기울어*** 끝.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "굵고기울어 끝."
+        marks = sorted(b.meta["inline_marks"], key=lambda m: m["kind"])
+        assert marks == [
+            {"kind": "bold",   "start": 0, "end": 5},
+            {"kind": "italic", "start": 0, "end": 5},
+        ]
+
+    def test_multiple_marks_same_paragraph(self, tmp_path: Path) -> None:
+        """한 단락에 4종이 다 등장. text 의 offset 들이 정확."""
+        md = _write(tmp_path, "**B** *I* ~~S~~ `C`\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "B I S C"
+        kinds = {m["kind"] for m in b.meta["inline_marks"]}
+        assert kinds == {"bold", "italic", "strike", "code"}
+
+    def test_no_inline_marks_means_no_meta_key(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "그냥 평문.\n")
+        b = parse_markdown(md)[0]
+        assert "inline_marks" not in b.meta
+
+    def test_empty_label_link_yields_empty_text_no_mark(
+        self, tmp_path: Path
+    ) -> None:
+        md = _write(tmp_path, "X[](https://x) Y.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "X Y."
+        assert "inline_marks" not in b.meta

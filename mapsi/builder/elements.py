@@ -71,6 +71,7 @@ from typing import Any
 
 from lxml import etree
 
+from ..inline_styles import resolve_charpr
 from ..parser import Block
 from ..styles import style_name
 from .header import StyleEntry
@@ -168,10 +169,11 @@ def build_paragraph(
     meta = block.meta or {}
     foot_marks = meta.get("footnote_marks")
     eq_marks = meta.get("equation_marks")
-    if foot_marks and eq_marks:
+    inline_marks = meta.get("inline_marks")
+    if sum(bool(x) for x in (foot_marks, eq_marks, inline_marks)) > 1:
         raise NotImplementedError(
-            "한 단락에 각주와 수식이 동시에 있는 경우는 아직 지원하지 않는다 "
-            "(09 픽스처 범위 외; 필요 시 _make_run_with_inline_marks 로 통합)"
+            "한 단락에 각주/수식/인라인 서식이 둘 이상 동시에 있는 경우는 "
+            "v0.1 에서 지원하지 않는다 (ADR 0004 영향 절 참조; 통합은 v0.2)"
         )
     if foot_marks:
         p.append(
@@ -183,9 +185,86 @@ def build_paragraph(
         p.append(
             _make_run_with_equations(block.text, eq_marks, entry.char_pr_id)
         )
+    elif inline_marks:
+        for run in _make_runs_with_inline_marks(
+            block.text, inline_marks, entry.char_pr_id
+        ):
+            p.append(run)
     else:
         p.append(_make_text_run(block.text, entry.char_pr_id))
     return p
+
+
+def _make_runs_with_inline_marks(
+    text: str,
+    marks: list[dict[str, Any]],
+    base_char_pr_id: str,
+) -> list[etree._Element]:
+    """인라인 서식 마크가 있는 단락을 ``hp:run`` 여러 개로 emit (Phase 10).
+
+    각 ``hp:run`` 의 ``charPrIDRef`` 는 그 자리에서 활성화된 마크 집합을
+    ``mapsi.inline_styles.resolve_charpr`` 로 룩업해 결정한다. 마크가
+    하나도 없는 세그먼트는 ``base_char_pr_id`` (= 단락 스타일이 가리키는
+    본문 charPr) 를 사용한다.
+
+    알고리즘
+    --------
+    1. 모든 마크의 ``start`` / ``end`` 와 ``0`` / ``len(text)`` 를 모아
+       경계 (boundary) 집합을 만든다.
+    2. 정렬·중복제거한 경계로 ``text`` 를 세그먼트로 자른다.
+    3. 각 세그먼트에서 활성 마크 집합 = ``{m.kind | m.start ≤ seg.start
+       and seg.end ≤ m.end}``.
+    4. 활성 집합 → ``resolve_charpr`` → charPr ID 결정.
+       단, 비활성 (집합 비었음) 세그먼트는 ``base_char_pr_id`` 를 직접
+       사용 (룩업 결과인 ``"7"`` 이 본문 charPr 와 다를 가능성을 차단).
+    5. 인접 세그먼트의 charPr ID 가 같으면 합쳐서 출력 단순화.
+    6. 빈 세그먼트는 emit 하지 않는다 (한/글이 빈 ``hp:t`` 를 깔끔히
+       처리하지 못함).
+
+    Returns
+    -------
+    list[lxml Element]
+        ``<hp:run>`` 노드들의 리스트. 각 run 은 ``<hp:t>`` 1 개를
+        가진다 (인라인 마크 단순 케이스).
+
+    Notes
+    -----
+    링크 (``link``) 는 파서가 마크로 등재하지 않으므로 본 함수가 별도
+    처리할 필요가 없다 (라벨 평문이 ``text`` 에 그대로 들어 있다).
+    각주/수식과 동시 등장은 호출자 (``build_paragraph``) 가 거부한다.
+    """
+    boundaries = {0, len(text)}
+    for m in marks:
+        boundaries.add(int(m["start"]))
+        boundaries.add(int(m["end"]))
+    sorted_bounds = sorted(b for b in boundaries if 0 <= b <= len(text))
+
+    runs: list[etree._Element] = []
+    last_char_pr: str | None = None
+    last_run: etree._Element | None = None
+    last_t: etree._Element | None = None
+
+    for lo, hi in zip(sorted_bounds, sorted_bounds[1:]):
+        if lo >= hi:
+            continue
+        active = {
+            m["kind"]
+            for m in marks
+            if int(m["start"]) <= lo and hi <= int(m["end"])
+        }
+        char_pr = resolve_charpr(active) if active else base_char_pr_id
+        seg_text = text[lo:hi]
+        if last_run is not None and char_pr == last_char_pr and last_t is not None:
+            last_t.text = (last_t.text or "") + seg_text
+            continue
+        run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": char_pr})
+        t = etree.SubElement(run, f"{_HP}t")
+        t.text = seg_text
+        runs.append(run)
+        last_char_pr = char_pr
+        last_run = run
+        last_t = t
+    return runs
 
 
 def _make_run_with_equations(

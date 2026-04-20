@@ -755,5 +755,162 @@ class TestEquationParagraph:
                 ],
             },
         )
-        with pytest.raises(NotImplementedError, match="동시에"):
+        with pytest.raises(NotImplementedError, match="둘 이상"):
+            build_paragraph(block, style_map, style_table)
+
+
+class TestInlineFormattingParagraph:
+    """``build_paragraph`` + ``inline_marks`` (Phase 10, ADR 0004)."""
+
+    @staticmethod
+    def _runs(p) -> list[tuple[str, str]]:
+        """``hp:p`` → ``[(charPrIDRef, t_text), ...]`` 평탄 리스트."""
+        out = []
+        for run in p.findall(f"{HP_NS}run"):
+            t = run.find(f"{HP_NS}t")
+            out.append((run.get("charPrIDRef"), t.text if t is not None else ""))
+        return out
+
+    def test_no_inline_marks_falls_back_to_single_run(
+        self, style_map, style_table
+    ) -> None:
+        """meta 가 없으면 기존 단일 run 경로 그대로."""
+        block = Block(role="paragraph", text="평문만.")
+        p = build_paragraph(block, style_map, style_table)
+        runs = self._runs(p)
+        assert runs == [("7", "평문만.")]
+
+    def test_bold_segment_uses_charpr_25(
+        self, style_map, style_table
+    ) -> None:
+        block = Block(
+            role="paragraph",
+            text="앞 굵은 뒤",
+            meta={"inline_marks": [{"kind": "bold", "start": 2, "end": 4}]},
+        )
+        p = build_paragraph(block, style_map, style_table)
+        assert self._runs(p) == [
+            ("7", "앞 "),
+            ("25", "굵은"),
+            ("7", " 뒤"),
+        ]
+
+    def test_italic_strike_code_each_uses_correct_charpr(
+        self, style_map, style_table
+    ) -> None:
+        block = Block(
+            role="paragraph",
+            text="A B C D",
+            meta={
+                "inline_marks": [
+                    {"kind": "italic", "start": 0, "end": 1},
+                    {"kind": "strike", "start": 2, "end": 3},
+                    {"kind": "code",   "start": 4, "end": 5},
+                ]
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        assert self._runs(p) == [
+            ("26", "A"),
+            ("7", " "),
+            ("28", "B"),
+            ("7", " "),
+            ("29", "C"),
+            ("7", " D"),
+        ]
+
+    def test_overlapping_bold_italic_uses_combined_charpr_27(
+        self, style_map, style_table
+    ) -> None:
+        """``***x***`` → bold + italic 동범위 → charPr 27 한 run."""
+        block = Block(
+            role="paragraph",
+            text="앞굵고기울어뒤",
+            meta={
+                "inline_marks": [
+                    {"kind": "bold",   "start": 1, "end": 6},
+                    {"kind": "italic", "start": 1, "end": 6},
+                ]
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        assert self._runs(p) == [
+            ("7", "앞"),
+            ("27", "굵고기울어"),
+            ("7", "뒤"),
+        ]
+
+    def test_partial_overlap_creates_three_segments(
+        self, style_map, style_table
+    ) -> None:
+        """bold:[0,4), italic:[2,6) → bold-only, both, italic-only 3 세그먼트."""
+        block = Block(
+            role="paragraph",
+            text="ABCDEF",
+            meta={
+                "inline_marks": [
+                    {"kind": "bold",   "start": 0, "end": 4},
+                    {"kind": "italic", "start": 2, "end": 6},
+                ]
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        assert self._runs(p) == [
+            ("25", "AB"),
+            ("27", "CD"),
+            ("26", "EF"),
+        ]
+
+    def test_adjacent_same_charpr_segments_are_merged(
+        self, style_map, style_table
+    ) -> None:
+        """경계가 같은 charPr 로 이어지면 한 ``hp:run`` 으로 합쳐진다."""
+        block = Block(
+            role="paragraph",
+            text="굵고굵음",
+            meta={
+                "inline_marks": [
+                    {"kind": "bold", "start": 0, "end": 2},
+                    {"kind": "bold", "start": 2, "end": 4},
+                ]
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        assert self._runs(p) == [("25", "굵고굵음")]
+
+    def test_inline_and_footnote_both_present_raises(
+        self, style_map, style_table
+    ) -> None:
+        block = Block(
+            role="paragraph",
+            text="x",
+            meta={
+                "footnote_marks": [
+                    {"kind": "footnote_ref", "offset": 0,
+                     "footnote_id": 0, "text": "주."}
+                ],
+                "inline_marks": [
+                    {"kind": "bold", "start": 0, "end": 1}
+                ],
+            },
+        )
+        with pytest.raises(NotImplementedError, match="둘 이상"):
+            build_paragraph(block, style_map, style_table)
+
+    def test_inline_and_equation_both_present_raises(
+        self, style_map, style_table
+    ) -> None:
+        block = Block(
+            role="paragraph",
+            text="x",
+            meta={
+                "equation_marks": [
+                    {"offset": 0, "latex": "y", "display": False}
+                ],
+                "inline_marks": [
+                    {"kind": "bold", "start": 0, "end": 1}
+                ],
+            },
+        )
+        with pytest.raises(NotImplementedError, match="둘 이상"):
             build_paragraph(block, style_map, style_table)

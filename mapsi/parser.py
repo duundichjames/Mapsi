@@ -116,6 +116,7 @@ def parse_markdown(md_path: str | Path) -> list[Block]:
     md = (
         MarkdownIt("commonmark")
         .enable("table")
+        .enable("strikethrough")
         .use(footnote_plugin)
         .use(dollarmath_plugin)
     )
@@ -189,7 +190,7 @@ def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
                     )
                 )
             else:
-                text, footnote_marks, equation_marks = (
+                text, footnote_marks, equation_marks, inline_marks = (
                     _inline_to_text_and_marks(inline)
                 )
                 if blockquote_depth > 0:
@@ -200,6 +201,8 @@ def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
                         meta["footnote_marks"] = footnote_marks
                     if equation_marks:
                         meta["equation_marks"] = equation_marks
+                    if inline_marks:
+                        meta["inline_marks"] = inline_marks
                     blocks.append(
                         Block(role="paragraph", text=text, meta=meta)
                     )
@@ -450,48 +453,80 @@ def _inline_to_text(inline_tok: Token) -> str:
     표 셀이나 list item 의 평문 텍스트가 필요한 곳에서 사용한다 — 이런
     위치에서는 인라인 마크가 필요 없거나 의미가 없다.
     """
-    text, _, _ = _inline_to_text_and_marks(inline_tok)
+    text, *_ = _inline_to_text_and_marks(inline_tok)
     return text
+
+
+_INLINE_MARK_OPEN: dict[str, str] = {
+    "strong_open": "bold",
+    "em_open":     "italic",
+    "s_open":      "strike",
+}
+"""``markdown-it`` 인라인 ``*_open`` 토큰 → Mapsi 마크 종류.
+
+대응 ``*_close`` 는 자동으로 동일 prefix 로 매칭한다 (스택 기반).
+``link_open`` 은 본 사전에 포함하지 않는다 — 라벨 텍스트만 평문에
+흡수하고 시각 마크는 부여하지 않기 때문 (ADR 0004 결정 1).
+"""
 
 
 def _inline_to_text_and_marks(
     inline_tok: Token,
-) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
-    """``inline`` 토큰을 평문 + 각주 마크 + 수식 마크로 분해한다.
+) -> tuple[
+    str,
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """``inline`` 토큰을 평문 + 각주/수식/인라인-서식 마크로 분해한다.
 
     Returns
     -------
-    (text, footnote_marks, equation_marks)
-        - ``text``: 평문. footnote 마커 ``[^id]`` 와 수식 ``$ ... $`` 는
-          *제외* 된다. 굵게/기울임 등 다른 인라인 서식은 평문화.
+    (text, footnote_marks, equation_marks, inline_marks)
+        - ``text``: 평문. 각주 마커 ``[^id]`` 와 수식 ``$ ... $`` 는 *제외*
+          되며, 그 외 인라인 서식 (``**bold``, ``*em*``, ``~~s~~``,
+          ``` `code` ``, ``[label](url)``) 은 라벨/내용 평문이 흡수된다.
         - ``footnote_marks``: ``[{"kind": "footnote_ref", "offset": int,
           "footnote_id": int}]``. ``offset`` 은 ``text`` 안의 문자 오프셋
           (해당 위치 *직전까지* 누적된 평문 길이).
         - ``equation_marks``: ``[{"offset": int, "latex": str,
           "display": False}]``. 인라인 수식만; 디스플레이 수식은 별도
           paragraph Block 으로 발급되므로 여기에 등장하지 않는다.
+        - ``inline_marks``: ``[{"kind": "bold|italic|strike|code",
+          "start": int, "end": int}]``. 반-개구간 ``[start, end)`` 로
+          ``text`` 안의 문자 위치를 가리킨다 (Phase 10).
 
     Notes
     -----
     각주 마커와 수식 텍스트가 평문에 포함되지 않는 이유: 한/글의
     ``hp:footNote`` 와 수식 마커 (``[hnc 수식]…[/hnc 수식]``) 가 빌더
-    단계에서 그 자리에 따로 emit 되기 때문. ``offset`` 은 그 삽입 위치를
-    가리킨다.
+    단계에서 그 자리에 따로 emit 된다. ``offset`` 은 그 삽입 위치.
+
+    인라인-서식 마크는 *겹쳐 등장* 가능 (``**bold *italic***`` →
+    bold:[0,11), italic:[5,11)). 빌더가 세그먼트별 활성 집합을 계산해
+    적합한 charPr 로 매핑한다 (``mapsi.inline_styles`` 참조).
+
+    링크는 ``link_open`` 부터 ``link_close`` 까지의 children 평문만
+    흡수하고 마크는 추가하지 않는다. URL 은 v0.1 에서 폐기 (ADR 0004
+    결정 1; v0.2 의 hyperlink field 마이그레이션 대상).
     """
     if inline_tok.type != "inline" or inline_tok.children is None:
-        return inline_tok.content or "", [], []
+        return inline_tok.content or "", [], [], []
     parts: list[str] = []
     footnote_marks: list[dict[str, Any]] = []
     equation_marks: list[dict[str, Any]] = []
+    inline_marks: list[dict[str, Any]] = []
+    open_stack: list[tuple[str, int]] = []
     cursor = 0
     for child in inline_tok.children:
-        if child.type == "text":
+        ctype = child.type
+        if ctype == "text":
             parts.append(child.content)
             cursor += len(child.content)
-        elif child.type in ("softbreak", "hardbreak"):
+        elif ctype in ("softbreak", "hardbreak"):
             parts.append("\n")
             cursor += 1
-        elif child.type == "footnote_ref":
+        elif ctype == "footnote_ref":
             footnote_id = child.meta.get("id") if child.meta else None
             if footnote_id is None:
                 continue
@@ -502,7 +537,7 @@ def _inline_to_text_and_marks(
                     "footnote_id": int(footnote_id),
                 }
             )
-        elif child.type == "math_inline":
+        elif ctype == "math_inline":
             equation_marks.append(
                 {
                     "offset": cursor,
@@ -510,8 +545,36 @@ def _inline_to_text_and_marks(
                     "display": False,
                 }
             )
-        # 기타 인라인 (em, strong, link 등) 은 후속 픽스처에서 처리.
-    return "".join(parts), footnote_marks, equation_marks
+        elif ctype in _INLINE_MARK_OPEN:
+            open_stack.append((_INLINE_MARK_OPEN[ctype], cursor))
+        elif ctype in ("strong_close", "em_close", "s_close"):
+            expected = ctype.removesuffix("_close")
+            kind = _INLINE_MARK_OPEN.get(f"{expected}_open")
+            for idx in range(len(open_stack) - 1, -1, -1):
+                if open_stack[idx][0] == kind:
+                    _, start = open_stack.pop(idx)
+                    if cursor > start:
+                        inline_marks.append(
+                            {"kind": kind, "start": start, "end": cursor}
+                        )
+                    break
+        elif ctype == "code_inline":
+            content = child.content or ""
+            if content:
+                start = cursor
+                parts.append(content)
+                cursor += len(content)
+                inline_marks.append(
+                    {"kind": "code", "start": start, "end": cursor}
+                )
+        elif ctype in ("link_open", "link_close"):
+            continue
+    return (
+        "".join(parts),
+        footnote_marks,
+        equation_marks,
+        inline_marks,
+    )
 
 
 def _consume_footnote_def(
@@ -564,7 +627,7 @@ def _consume_footnote_def(
                 j - open_idx + 1,
             )
         if t.type == "inline":
-            text, _, _ = _inline_to_text_and_marks(t)
+            text, *_ = _inline_to_text_and_marks(t)
             if text:
                 parts.append(text)
         # paragraph_open / paragraph_close / footnote_anchor 등은 무시.
