@@ -623,12 +623,76 @@ class TestInlineFormattingMarks:
             {"kind": "code", "start": 3, "end": 8}
         ]
 
-    def test_link_label_kept_url_dropped(self, tmp_path: Path) -> None:
-        """ADR 0004 결정 1: 라벨만 평문에 들어가고 URL 은 폐기, mark 도 없음."""
+    def test_link_label_and_url_kept_in_inline_marks(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR 0004 결정 1 (v0.1.1): 라벨은 평문에, URL 은 link mark 에 보존."""
         md = _write(tmp_path, "[GitHub](https://github.com) 링크.\n")
         b = parse_markdown(md)[0]
         assert b.text == "GitHub 링크."
-        assert "inline_marks" not in b.meta
+        assert b.meta["inline_marks"] == [
+            {
+                "kind": "link",
+                "start": 0,
+                "end": 6,
+                "url": "https://github.com",
+            }
+        ]
+
+    def test_linkify_bare_url_produces_link_mark(
+        self, tmp_path: Path
+    ) -> None:
+        """markdown-it linkify 가 베어 URL 을 자동으로 link 로 만든다."""
+        md = _write(tmp_path, "참고 https://pandoc.org/MANUAL.html 를 봐.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "참고 https://pandoc.org/MANUAL.html 를 봐."
+        marks = b.meta["inline_marks"]
+        assert len(marks) == 1
+        assert marks[0]["kind"] == "link"
+        assert marks[0]["url"] == "https://pandoc.org/MANUAL.html"
+        assert b.text[marks[0]["start"] : marks[0]["end"]] == (
+            "https://pandoc.org/MANUAL.html"
+        )
+
+    def test_email_autolink_produces_mailto_link(
+        self, tmp_path: Path
+    ) -> None:
+        """이메일 주소도 linkify 로 ``mailto:`` link 가 된다."""
+        md = _write(tmp_path, "문의 foo@bar.com 으로.\n")
+        b = parse_markdown(md)[0]
+        marks = b.meta["inline_marks"]
+        assert len(marks) == 1
+        assert marks[0]["kind"] == "link"
+        assert marks[0]["url"] == "mailto:foo@bar.com"
+
+    def test_anchor_link_keeps_fragment_url(
+        self, tmp_path: Path
+    ) -> None:
+        """내부 앵커 (``#section``) 도 URL 을 그대로 보존한다 (점프는 v0.3)."""
+        md = _write(tmp_path, "[내부](#section) 로.\n")
+        b = parse_markdown(md)[0]
+        marks = b.meta["inline_marks"]
+        assert len(marks) == 1
+        assert marks[0] == {
+            "kind": "link",
+            "start": 0,
+            "end": 2,
+            "url": "#section",
+        }
+
+    def test_bold_link_overlap_produces_both_marks(
+        self, tmp_path: Path
+    ) -> None:
+        """``**[굵은링크](url)**`` 은 bold 와 link mark 가 같은 범위로 공존."""
+        md = _write(tmp_path, "**[GitHub](https://github.com)** 끝.\n")
+        b = parse_markdown(md)[0]
+        assert b.text == "GitHub 끝."
+        marks = sorted(b.meta["inline_marks"], key=lambda m: m["kind"])
+        assert marks[0]["kind"] == "bold"
+        assert (marks[0]["start"], marks[0]["end"]) == (0, 6)
+        assert marks[1]["kind"] == "link"
+        assert (marks[1]["start"], marks[1]["end"]) == (0, 6)
+        assert marks[1]["url"] == "https://github.com"
 
     def test_nested_bold_italic_emits_two_marks(self, tmp_path: Path) -> None:
         """``***x***`` 는 bold 와 italic 두 mark 가 동일 범위로 등장."""
@@ -695,15 +759,22 @@ class TestListItemInlineMarks:
         kinds = sorted(m["kind"] for m in blk.meta["inline_marks"])
         assert kinds == ["code", "italic"]
 
-    def test_ordered_item_link_label_kept_url_dropped(
+    def test_ordered_item_link_kept_with_url(
         self, tmp_path: Path
     ) -> None:
-        """ADR 0004 결정 1 이 list 경로에서도 동일 적용."""
+        """ADR 0004 결정 1 (v0.1.1) 이 list 경로에서도 동일 적용."""
         md = _write(tmp_path, "1. [한컴](https://hancom.com) 사이트\n")
         blk = parse_markdown(md)[0]
         assert blk.role == "ordered_list"
         assert blk.text == "한컴 사이트"
-        assert "inline_marks" not in blk.meta
+        assert blk.meta["inline_marks"] == [
+            {
+                "kind": "link",
+                "start": 0,
+                "end": 2,
+                "url": "https://hancom.com",
+            }
+        ]
 
     def test_nested_bullet_inherits_inline_marks(self, tmp_path: Path) -> None:
         """깊이 2 의 항목도 동일하게 inline_marks 를 보존."""
@@ -730,3 +801,74 @@ class TestListItemInlineMarks:
         blk = parse_markdown(md)[0]
         assert blk.role == "bullet_list"
         assert "inline_marks" not in blk.meta
+
+
+class TestBlockquoteInlineMarks:
+    """blockquote 안의 인라인 서식·각주·인라인 수식이 paragraph / list_item
+    과 동일하게 ``meta`` 에 보존되는지.
+
+    Phase 11 CP4 통합 골든을 인용문/코드 블록까지 확장하면서 발견된 회귀 —
+    ``parser.py`` 의 ``blockquote_depth > 0`` 분기가 ``Block`` 을 만들 때
+    ``text`` 만 사용하고 ``footnote_marks/equation_marks/inline_marks`` 를
+    조용히 폐기하고 있었다. list_item 누락과 동일한 패턴이며, 같은 회귀가
+    재발하지 않도록 잠근다.
+    """
+
+    def test_blockquote_bold_creates_inline_mark(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "> **첫째** 인용\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "첫째 인용"
+        assert blk.meta["inline_marks"] == [
+            {"kind": "bold", "start": 0, "end": 2}
+        ]
+
+    def test_blockquote_italic_and_code_marks(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "> *기울인* `func()` 를 호출\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "기울인 func() 를 호출"
+        kinds = sorted(m["kind"] for m in blk.meta["inline_marks"])
+        assert kinds == ["code", "italic"]
+
+    def test_blockquote_link_kept_with_url(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR 0004 결정 1 (v0.1.1) 이 blockquote 경로에서도 동일 적용."""
+        md = _write(tmp_path, "> [한컴](https://hancom.com) 출처\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "한컴 출처"
+        assert blk.meta["inline_marks"] == [
+            {
+                "kind": "link",
+                "start": 0,
+                "end": 2,
+                "url": "https://hancom.com",
+            }
+        ]
+
+    def test_blockquote_footnote_mark_is_kept(self, tmp_path: Path) -> None:
+        """blockquote 안의 각주 참조도 footnote_marks 로 보존돼야 한다."""
+        md = _write(
+            tmp_path,
+            "> 인용문에 각주가 붙는다[^q].\n"
+            "\n"
+            "[^q]: 이것이 인용문 각주의 본문이다.\n",
+        )
+        blocks = parse_markdown(md)
+        bq = next(b for b in blocks if b.role == "blockquote")
+        assert bq.text == "인용문에 각주가 붙는다."
+        assert "footnote_marks" in bq.meta
+        assert len(bq.meta["footnote_marks"]) == 1
+        mark = bq.meta["footnote_marks"][0]
+        assert mark["kind"] == "footnote_ref"
+        assert isinstance(mark["footnote_id"], int)
+
+    def test_plain_blockquote_has_no_marks_keys(self, tmp_path: Path) -> None:
+        """인라인 서식·각주·수식이 없는 인용문은 meta 가 비어 있어야 한다."""
+        md = _write(tmp_path, "> 그냥 평문 인용\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "그냥 평문 인용"
+        assert blk.meta == {} or blk.meta is None

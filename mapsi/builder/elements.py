@@ -71,7 +71,7 @@ from typing import Any
 
 from lxml import etree
 
-from ..inline_styles import resolve_charpr
+from ..inline_styles import HYPERLINK_CHARPR_ID, resolve_charpr
 from ..parser import Block
 from ..styles import style_name
 from .header import StyleEntry
@@ -213,25 +213,40 @@ def _make_runs_with_inline_marks(
        경계 (boundary) 집합을 만든다.
     2. 정렬·중복제거한 경계로 ``text`` 를 세그먼트로 자른다.
     3. 각 세그먼트에서 활성 마크 집합 = ``{m.kind | m.start ≤ seg.start
-       and seg.end ≤ m.end}``.
-    4. 활성 집합 → ``resolve_charpr`` → charPr ID 결정.
-       단, 비활성 (집합 비었음) 세그먼트는 ``base_char_pr_id`` 를 직접
-       사용 (룩업 결과인 ``"7"`` 이 본문 charPr 와 다를 가능성을 차단).
-    5. 인접 세그먼트의 charPr ID 가 같으면 합쳐서 출력 단순화.
-    6. 빈 세그먼트는 emit 하지 않는다 (한/글이 빈 ``hp:t`` 를 깔끔히
-       처리하지 못함).
+       and seg.end ≤ m.end}``. 링크는 URL 도 함께 기억한다.
+    4. 활성 집합에 ``link`` 가 있으면 charPr 를
+       :data:`mapsi.inline_styles.HYPERLINK_CHARPR_ID` (= 파란 + 밑줄)
+       로 고정하고, 해당 세그먼트는 ``hp:fieldBegin/fieldEnd`` 3-run
+       쌍으로 emit (ADR 0004 결정 1 v0.1.1). 링크 세그먼트는 인접
+       merge 대상이 아니다 (각 필드가 독립 ID 를 가져야 한다).
+    5. ``link`` 가 없는 세그먼트는 기존 룩업 → charPr. 비활성 (집합
+       비었음) 은 ``base_char_pr_id`` 를 직접 사용.
+    6. 인접 non-link 세그먼트의 charPr 가 같으면 합쳐서 출력 단순화.
+    7. 빈 세그먼트는 emit 하지 않는다.
+
+    HYPERLINK 3-run 구조 (python-hwpx `add_hyperlink` 참고)::
+
+        <hp:run charPrIDRef="30">
+          <hp:ctrl>
+            <hp:fieldBegin id="<uuid>" type="HYPERLINK" name="<URL>"
+                           editable="false" dirty="false"/>
+          </hp:ctrl>
+        </hp:run>
+        <hp:run charPrIDRef="30"><hp:t>라벨</hp:t></hp:run>
+        <hp:run charPrIDRef="30">
+          <hp:ctrl><hp:fieldEnd beginIDRef="<uuid>"/></hp:ctrl>
+        </hp:run>
 
     Returns
     -------
     list[lxml Element]
-        ``<hp:run>`` 노드들의 리스트. 각 run 은 ``<hp:t>`` 1 개를
-        가진다 (인라인 마크 단순 케이스).
+        ``<hp:run>`` 노드들의 리스트.
 
     Notes
     -----
-    링크 (``link``) 는 파서가 마크로 등재하지 않으므로 본 함수가 별도
-    처리할 필요가 없다 (라벨 평문이 ``text`` 에 그대로 들어 있다).
     각주/수식과 동시 등장은 호출자 (``build_paragraph``) 가 거부한다.
+    링크가 bold 등 다른 시각 마크와 겹치면 링크 charPr 가 이긴다
+    (클릭 가능성 보존이 조합 시각 서식보다 우선).
     """
     boundaries = {0, len(text)}
     for m in marks:
@@ -247,13 +262,28 @@ def _make_runs_with_inline_marks(
     for lo, hi in zip(sorted_bounds, sorted_bounds[1:]):
         if lo >= hi:
             continue
-        active = {
-            m["kind"]
-            for m in marks
+        active_marks = [
+            m for m in marks
             if int(m["start"]) <= lo and hi <= int(m["end"])
-        }
-        char_pr = resolve_charpr(active) if active else base_char_pr_id
+        ]
+        active_kinds = {m["kind"] for m in active_marks}
         seg_text = text[lo:hi]
+
+        link_mark = next(
+            (m for m in active_marks if m["kind"] == "link" and m.get("url")),
+            None,
+        )
+        if link_mark is not None:
+            url = str(link_mark["url"])
+            runs.extend(_make_hyperlink_runs(seg_text, url))
+            last_char_pr = None
+            last_run = None
+            last_t = None
+            continue
+
+        char_pr = (
+            resolve_charpr(active_kinds) if active_kinds else base_char_pr_id
+        )
         if last_run is not None and char_pr == last_char_pr and last_t is not None:
             last_t.text = (last_t.text or "") + seg_text
             continue
@@ -265,6 +295,135 @@ def _make_runs_with_inline_marks(
         last_run = run
         last_t = t
     return runs
+
+
+def _make_hyperlink_runs(label: str, url: str) -> list[etree._Element]:
+    """HYPERLINK 필드로 감싼 3-run (fieldBegin / text / fieldEnd) 을 만든다.
+
+    한/글이 *실제로 클릭을 활성화* 하려면 ``hp:fieldBegin[@name]`` 에 URL 을
+    넣는 축약형 (python-hwpx ``add_hyperlink``) 으로는 부족하고, 한/글이
+    export 하는 "정식" 파라미터 블록이 필요하다. 본 함수는 한/글이 직접
+    저장한 ``python-hwpx`` fixture (``shared/hwpx/fixtures/fields/
+    10_fieldcodes_min.hwpx``) 에서 추출한 다음 형태를 emit 한다 (v0.1.2)::
+
+        <hp:run charPrIDRef="30">
+          <hp:ctrl>
+            <hp:fieldBegin id="<A>" type="HYPERLINK" name=""
+                           editable="0" dirty="1"
+                           zorder="-1" fieldid="<B>" metaTag="">
+              <hp:parameters cnt="7" name="">
+                <hp:integerParam name="Prop">0</hp:integerParam>
+                <hp:stringParam name="Command"><ESCAPED_URL>|<TT>;1;0;0;</hp:stringParam>
+                <hp:stringParam name="Path"><URL></hp:stringParam>
+                <hp:stringParam name="Category"><HWPHYPERLINK_TYPE_*></hp:stringParam>
+                <hp:stringParam name="TargetType">HWPHYPERLINK_TARGET_BOOKMARK</hp:stringParam>
+                <hp:stringParam name="DocOpenType">HWPHYPERLINK_JUMP_CURRENTTAB</hp:stringParam>
+                <hp:stringParam name="ToolTip"><TT></hp:stringParam>
+              </hp:parameters>
+            </hp:fieldBegin>
+          </hp:ctrl>
+        </hp:run>
+        <hp:run charPrIDRef="30"><hp:t>라벨</hp:t></hp:run>
+        <hp:run charPrIDRef="30">
+          <hp:ctrl><hp:fieldEnd beginIDRef="<A>" fieldid="<B>"/></hp:ctrl>
+          <hp:t/>
+        </hp:run>
+
+    ``id`` 와 ``fieldid`` 는 각각 *독립* 난수이지만, ``fieldEnd`` 의
+    ``beginIDRef`` 는 반드시 ``fieldBegin/@id`` 와 같고, ``fieldEnd/@fieldid``
+    는 ``fieldBegin/@fieldid`` 와 같다 (한/글이 쌍을 ID 둘 모두로 매칭).
+
+    Category 규칙 (URL 모양으로 결정):
+
+    - ``#...`` (앵커) → ``HWPHYPERLINK_TYPE_BOOKMARK``
+    - 그 외 (``http``, ``https``, ``mailto``, 상대/절대 경로) →
+      ``HWPHYPERLINK_TYPE_URL``
+
+    Command 문자열의 ``:`` 는 한/글 규약상 ``\\:`` 로 escape 한다 (구분자와
+    충돌 방지). ``|`` 는 파라미터 구분자이므로 URL 에 실제로 들어 있으면
+    ``\\|`` 로 escape 한다. ``Path`` 에는 escape 하지 않은 원 URL 을 그대로
+    둔다 (한/글이 실제 열기에 사용하는 값).
+
+    Parameters
+    ----------
+    label : str
+        화면에 보일 텍스트 (빈 문자열이면 URL 자체를 표시).
+    url : str
+        필드에 박을 하이퍼링크 타깃.
+
+    Returns
+    -------
+    list[lxml Element]
+        3 개의 ``hp:run`` (fieldBegin / text / fieldEnd).
+    """
+    field_id = str(random.randint(1, 2**31 - 1))
+    inst_id = str(random.randint(1, 2**31 - 1))
+    cp = HYPERLINK_CHARPR_ID
+    display = label if label else url
+    tooltip = display
+    category = (
+        "HWPHYPERLINK_TYPE_BOOKMARK" if url.startswith("#")
+        else "HWPHYPERLINK_TYPE_URL"
+    )
+    escaped_url = url.replace("\\", "\\\\").replace(":", r"\:").replace("|", r"\|")
+    escaped_tooltip = tooltip.replace(";", r"\;")
+    command_value = f"{escaped_url}|{escaped_tooltip};1;0;0;"
+
+    begin_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
+    ctrl_begin = etree.SubElement(begin_run, f"{_HP}ctrl")
+    field_begin = etree.SubElement(
+        ctrl_begin,
+        f"{_HP}fieldBegin",
+        attrib={
+            "id": field_id,
+            "type": "HYPERLINK",
+            "name": "",
+            "editable": "0",
+            "dirty": "1",
+            "zorder": "-1",
+            "fieldid": inst_id,
+            "metaTag": "",
+        },
+    )
+    params = etree.SubElement(
+        field_begin,
+        f"{_HP}parameters",
+        attrib={"cnt": "7", "name": ""},
+    )
+
+    def _int_param(name: str, value: str) -> None:
+        node = etree.SubElement(
+            params, f"{_HP}integerParam", attrib={"name": name}
+        )
+        node.text = value
+
+    def _str_param(name: str, value: str) -> None:
+        node = etree.SubElement(
+            params, f"{_HP}stringParam", attrib={"name": name}
+        )
+        node.text = value
+
+    _int_param("Prop", "0")
+    _str_param("Command", command_value)
+    _str_param("Path", url)
+    _str_param("Category", category)
+    _str_param("TargetType", "HWPHYPERLINK_TARGET_BOOKMARK")
+    _str_param("DocOpenType", "HWPHYPERLINK_JUMP_CURRENTTAB")
+    _str_param("ToolTip", tooltip)
+
+    text_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
+    t = etree.SubElement(text_run, f"{_HP}t")
+    t.text = display
+
+    end_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
+    ctrl_end = etree.SubElement(end_run, f"{_HP}ctrl")
+    etree.SubElement(
+        ctrl_end,
+        f"{_HP}fieldEnd",
+        attrib={"beginIDRef": field_id, "fieldid": inst_id},
+    )
+    etree.SubElement(end_run, f"{_HP}t")
+    return [begin_run, text_run, end_run]
 
 
 def _make_run_with_equations(

@@ -81,3 +81,115 @@ def test_blocks_without_src_meta_are_ignored(tmp_path: Path) -> None:
     image_map, entries = _register_figure_images(blocks, FIXTURE_DIR, tmp_path)
     assert image_map == {}
     assert entries == []
+
+
+class TestAllowMissingImages:
+    """``allow_missing_images=True`` 분기 — UI 업로드 시 상대경로 이미지가
+    서버에 존재하지 않는 상황을 번들 placeholder PNG 로 복구하는 경로."""
+
+    def test_missing_src_falls_back_to_placeholder(self, tmp_path: Path) -> None:
+        blocks = [_fig("nonexistent.png", "원본 alt")]
+        image_map, entries = _register_figure_images(
+            blocks, FIXTURE_DIR, tmp_path, allow_missing_images=True
+        )
+        assert "nonexistent.png" in image_map
+        info = image_map["nonexistent.png"]
+        assert info["binary_item_id"] == "image1"
+        assert len(entries) == 1
+        # placeholder 가 BinData 에 실제 복사되었는지 파일명으로 확인
+        bindata_files = sorted(p.name for p in (tmp_path / "BinData").iterdir())
+        assert bindata_files == ["image1.png"]
+
+    def test_missing_figure_block_text_is_rewritten(self, tmp_path: Path) -> None:
+        blk = _fig("nonexistent.png", "원본 alt")
+        _register_figure_images(
+            [blk], FIXTURE_DIR, tmp_path, allow_missing_images=True
+        )
+        assert blk.text == "[이미지 로드 실패] 원본 alt"
+        assert blk.meta["caption"] == "이미지 로드 실패: nonexistent.png"
+
+    def test_missing_figure_with_existing_caption_preserves_it(
+        self, tmp_path: Path
+    ) -> None:
+        blk = Block(
+            role="figure",
+            text="alt",
+            meta={"src": "gone.png", "caption": "원본 캡션"},
+        )
+        _register_figure_images(
+            [blk], FIXTURE_DIR, tmp_path, allow_missing_images=True
+        )
+        assert "원본 캡션" in blk.meta["caption"]
+        assert "gone.png" in blk.meta["caption"]
+
+    def test_missing_figure_without_alt_text(self, tmp_path: Path) -> None:
+        blk = Block(role="figure", text="", meta={"src": "gone.png", "caption": None})
+        _register_figure_images(
+            [blk], FIXTURE_DIR, tmp_path, allow_missing_images=True
+        )
+        assert blk.text == "[이미지 로드 실패]"
+
+    def test_missing_report_collects_unique_srcs(self, tmp_path: Path) -> None:
+        blocks = [
+            _fig("a.png", "A"),
+            _fig("b.png", "B"),
+            _fig("a.png", "A'"),
+        ]
+        report: list[str] = []
+        _register_figure_images(
+            blocks,
+            FIXTURE_DIR,
+            tmp_path,
+            allow_missing_images=True,
+            missing_report=report,
+        )
+        assert report == ["a.png", "b.png"]
+
+    def test_multiple_missing_srcs_share_placeholder_binary(
+        self, tmp_path: Path
+    ) -> None:
+        """여러 누락 src 는 **동일** placeholder PNG 를 공유해야 한다
+        (BinData 중복 방지 + manifest 단일 entry)."""
+        blocks = [_fig("a.png", "A"), _fig("b.png", "B"), _fig("c.png", "C")]
+        image_map, entries = _register_figure_images(
+            blocks, FIXTURE_DIR, tmp_path, allow_missing_images=True
+        )
+        ids = {image_map[src]["binary_item_id"] for src in ("a.png", "b.png", "c.png")}
+        assert ids == {"image1"}
+        assert len(entries) == 1
+        bindata_files = sorted(p.name for p in (tmp_path / "BinData").iterdir())
+        assert bindata_files == ["image1.png"]
+
+    def test_existing_files_are_unaffected_by_flag(self, tmp_path: Path) -> None:
+        """실제로 존재하는 원본은 flag 와 무관하게 그대로 등록된다."""
+        blocks = [_fig(SAMPLE_REL, "alt")]
+        report: list[str] = []
+        image_map, entries = _register_figure_images(
+            blocks,
+            FIXTURE_DIR,
+            tmp_path,
+            allow_missing_images=True,
+            missing_report=report,
+        )
+        assert SAMPLE_REL in image_map
+        assert report == []
+        assert image_map[SAMPLE_REL]["width_hwpunit"] == 15000
+
+    def test_mixed_existing_and_missing(self, tmp_path: Path) -> None:
+        """존재 + 누락이 섞여 있어도 각각 올바르게 처리."""
+        blocks = [_fig(SAMPLE_REL, "ok"), _fig("gone.png", "fail")]
+        report: list[str] = []
+        image_map, entries = _register_figure_images(
+            blocks,
+            FIXTURE_DIR,
+            tmp_path,
+            allow_missing_images=True,
+            missing_report=report,
+        )
+        assert SAMPLE_REL in image_map
+        assert "gone.png" in image_map
+        assert image_map[SAMPLE_REL]["binary_item_id"] != image_map["gone.png"][
+            "binary_item_id"
+        ]
+        assert len(entries) == 2
+        assert report == ["gone.png"]

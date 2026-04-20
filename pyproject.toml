@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "markdown-it-py>=3.0",
     "mdit-py-plugins>=0.4",
+    "linkify-it-py>=2.0",
     "lxml>=5.0",
     "pyyaml>=6.0",
     "Pillow>=10.0",
@@ -36,6 +37,9 @@ llm = [
     "anthropic>=0.34",
     "openai>=1.40",
     "python-dotenv>=1.0",
+]
+ui = [
+    "streamlit>=1.32",
 ]
 dev = [
     "pytest>=8.0",
@@ -53,7 +57,7 @@ include = ["mapsi*"]
 exclude = ["tests*", "samples*", "spec*", "templates*", "docs*"]
 
 [tool.setuptools.package-data]
-mapsi = ["py.typed"]
+mapsi = ["py.typed", "assets/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
