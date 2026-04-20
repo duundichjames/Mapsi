@@ -22,6 +22,15 @@ pip install -e ".[dev]"
 
 # LLM + 개발 모두
 pip install -e ".[llm,dev]"
+
+# + Streamlit UI (브라우저에서 변환, streamlit 추가 설치)
+pip install -e ".[ui]"
+```
+
+Streamlit UI 는 설치 후 다음 명령으로 실행한다.
+
+```bash
+streamlit run streamlit_app.py
 ```
 
 `.[dev]` / `.[llm,dev]` 의 대괄호는 `pyproject.toml` 의
