@@ -12,8 +12,12 @@ ADR 0004 의 결정 3·4 를 구현한다. 마크다운 인라인 서식 (``**bo
 "오버레이") 은 HWPML 모델에 존재하지 않는다. 대신 자주 쓰는 조합만
 미리 등록하고 (5 종, ID 25~29), 빌더가 마크 집합을 키로 매핑한다.
 
-링크 (``link``) 는 v0.1 에서 라벨 텍스트만 보존하고 시각 서식을 적용하지
-않는다 (ADR 0004 결정 1). 따라서 본 룩업 테이블에 등재하지 않는다.
+링크 (``link``) 는 다른 인라인 마크와 달리 *고정* ``charPr`` (= "하이퍼링크",
+ID :data:`HYPERLINK_CHARPR_ID`, 파란 글자 + 밑줄) 로 처리하고, 런 자체를
+``hp:fieldBegin/fieldEnd`` 쌍으로 감싼다. 즉 "조합 룩업 테이블" 대상이
+아니므로 본 테이블에 등재하지 않는다. bold/italic 과 같은 다른 마크와
+겹쳐도 링크 세그먼트는 하이퍼링크 charPr 로만 렌더링한다 (일관성 ·
+클릭 가능성이 시각 서식보다 우선. ADR 0004 결정 1 v0.1.1 업데이트).
 
 디그레이드 정책
 ----------------
@@ -33,6 +37,7 @@ from typing import Iterable
 
 __all__ = [
     "BODY_CHARPR_ID",
+    "HYPERLINK_CHARPR_ID",
     "INLINE_MARK_KINDS",
     "INLINE_CHARPR",
     "MARK_PRIORITY",
@@ -42,6 +47,14 @@ __all__ = [
 
 BODY_CHARPR_ID = "7"
 """본문 charPr ID. 인라인 마크가 비어 있을 때 사용된다."""
+
+
+HYPERLINK_CHARPR_ID = "30"
+"""하이퍼링크 charPr ID (파란 글자 + 밑줄).
+
+``templates/Contents/header.xml`` 의 ``hh:charProperties/hh:charPr[@id='30']``
+에 정의된다 (textColor ``#0563C1``, underline SOLID ``#0563C1``). Builder 는
+``kind="link"`` 인 inline mark 세그먼트의 모든 run 에 이 ID 를 부여한다."""
 
 INLINE_MARK_KINDS = frozenset({"bold", "italic", "strike", "code"})
 """v0.1 에서 시각 서식을 부여하는 인라인 마크 종류.

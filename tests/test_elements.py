@@ -914,3 +914,147 @@ class TestInlineFormattingParagraph:
         )
         with pytest.raises(NotImplementedError, match="둘 이상"):
             build_paragraph(block, style_map, style_table)
+
+
+class TestHyperlinkField:
+    """``link`` inline mark 가 ``hp:fieldBegin/fieldEnd`` HYPERLINK 쌍으로
+    감싸지는지 (ADR 0004 결정 1 v0.1.1)."""
+
+    @staticmethod
+    def _dump(p) -> list[dict]:
+        """hp:run 을 {cp, text, field, url, end_ref} 로 납작하게 만든다."""
+        out = []
+        for run in p.findall(f"{HP_NS}run"):
+            cp = run.get("charPrIDRef")
+            t = run.find(f"{HP_NS}t")
+            fb = run.find(f"{HP_NS}ctrl/{HP_NS}fieldBegin")
+            fe = run.find(f"{HP_NS}ctrl/{HP_NS}fieldEnd")
+            out.append({
+                "cp": cp,
+                "text": t.text if t is not None else None,
+                "field_begin": (
+                    {"id": fb.get("id"), "type": fb.get("type"),
+                     "name": fb.get("name")}
+                    if fb is not None else None
+                ),
+                "field_end_ref": fe.get("beginIDRef") if fe is not None else None,
+            })
+        return out
+
+    def test_single_link_emits_three_runs_with_hyperlink_field(
+        self, style_map, style_table
+    ) -> None:
+        block = Block(
+            role="paragraph",
+            text="앞 링크 뒤",
+            meta={
+                "inline_marks": [
+                    {
+                        "kind": "link",
+                        "start": 2,
+                        "end": 4,
+                        "url": "https://example.com",
+                    }
+                ],
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        dumped = self._dump(p)
+        assert len(dumped) == 5
+        assert dumped[0]["cp"] == "7" and dumped[0]["text"] == "앞 "
+        assert dumped[1]["cp"] == "30"
+        assert dumped[1]["field_begin"] == {
+            "id": dumped[1]["field_begin"]["id"],
+            "type": "HYPERLINK",
+            "name": "https://example.com",
+        }
+        assert dumped[2]["cp"] == "30" and dumped[2]["text"] == "링크"
+        assert dumped[3]["cp"] == "30"
+        assert dumped[3]["field_end_ref"] == dumped[1]["field_begin"]["id"]
+        assert dumped[4]["cp"] == "7" and dumped[4]["text"] == " 뒤"
+
+    def test_multiple_links_each_get_independent_field_ids(
+        self, style_map, style_table
+    ) -> None:
+        block = Block(
+            role="paragraph",
+            text="A B",
+            meta={
+                "inline_marks": [
+                    {"kind": "link", "start": 0, "end": 1,
+                     "url": "https://a"},
+                    {"kind": "link", "start": 2, "end": 3,
+                     "url": "https://b"},
+                ],
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        dumped = self._dump(p)
+        begins = [d for d in dumped if d["field_begin"] is not None]
+        ends = [d for d in dumped if d["field_end_ref"] is not None]
+        assert len(begins) == len(ends) == 2
+        assert begins[0]["field_begin"]["name"] == "https://a"
+        assert begins[1]["field_begin"]["name"] == "https://b"
+        assert begins[0]["field_begin"]["id"] != begins[1]["field_begin"]["id"]
+        assert ends[0]["field_end_ref"] == begins[0]["field_begin"]["id"]
+        assert ends[1]["field_end_ref"] == begins[1]["field_begin"]["id"]
+
+    def test_link_overlapping_bold_prefers_hyperlink_charpr(
+        self, style_map, style_table
+    ) -> None:
+        """``**[굵은](url)**`` → 링크 charPr(30) 이 bold(25) 를 덮어쓴다."""
+        block = Block(
+            role="paragraph",
+            text="굵은링크",
+            meta={
+                "inline_marks": [
+                    {"kind": "bold", "start": 0, "end": 4},
+                    {"kind": "link", "start": 0, "end": 4,
+                     "url": "https://x"},
+                ],
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        dumped = self._dump(p)
+        text_runs = [d for d in dumped if d["text"] is not None]
+        assert [(d["cp"], d["text"]) for d in text_runs] == [("30", "굵은링크")]
+        assert any(
+            d["field_begin"] and d["field_begin"]["name"] == "https://x"
+            for d in dumped
+        )
+
+    def test_anchor_link_keeps_url_as_fragment(
+        self, style_map, style_table
+    ) -> None:
+        """내부 앵커 URL 도 그대로 name 에 보존된다 (점프는 v0.3)."""
+        block = Block(
+            role="paragraph",
+            text="내부",
+            meta={
+                "inline_marks": [
+                    {"kind": "link", "start": 0, "end": 2, "url": "#sec"}
+                ],
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        dumped = self._dump(p)
+        begin = next(d for d in dumped if d["field_begin"] is not None)
+        assert begin["field_begin"]["name"] == "#sec"
+
+    def test_empty_url_link_ignored(self, style_map, style_table) -> None:
+        """URL 이 빈 문자열인 link mark 는 필드로 감싸지 않고 평문 처리."""
+        block = Block(
+            role="paragraph",
+            text="X",
+            meta={
+                "inline_marks": [
+                    {"kind": "link", "start": 0, "end": 1, "url": ""}
+                ],
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        dumped = self._dump(p)
+        assert dumped == [{
+            "cp": "7", "text": "X",
+            "field_begin": None, "field_end_ref": None,
+        }]

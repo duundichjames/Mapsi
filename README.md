@@ -134,7 +134,7 @@ python -m mapsi.inspect output/*.hwpx
 ### 테스트
 
 ```bash
-pytest                          # 전체 (현재 352개)
+pytest                          # 전체 (현재 361개)
 pytest tests/test_golden.py -v  # 골든 회귀만
 ```
 

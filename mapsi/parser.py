@@ -114,9 +114,10 @@ def parse_markdown(md_path: str | Path) -> list[Block]:
     text = Path(md_path).read_text(encoding="utf-8")
     text = _strip_front_matter(text)
     md = (
-        MarkdownIt("commonmark")
+        MarkdownIt("commonmark", {"linkify": True})
         .enable("table")
         .enable("strikethrough")
+        .enable("linkify")
         .use(footnote_plugin)
         .use(dollarmath_plugin)
     )
@@ -559,7 +560,7 @@ def _inline_to_text_and_marks(
     footnote_marks: list[dict[str, Any]] = []
     equation_marks: list[dict[str, Any]] = []
     inline_marks: list[dict[str, Any]] = []
-    open_stack: list[tuple[str, int]] = []
+    open_stack: list[tuple[str, int, dict[str, Any] | None]] = []
     cursor = 0
     for child in inline_tok.children:
         ctype = child.type
@@ -589,13 +590,13 @@ def _inline_to_text_and_marks(
                 }
             )
         elif ctype in _INLINE_MARK_OPEN:
-            open_stack.append((_INLINE_MARK_OPEN[ctype], cursor))
+            open_stack.append((_INLINE_MARK_OPEN[ctype], cursor, None))
         elif ctype in ("strong_close", "em_close", "s_close"):
             expected = ctype.removesuffix("_close")
             kind = _INLINE_MARK_OPEN.get(f"{expected}_open")
             for idx in range(len(open_stack) - 1, -1, -1):
                 if open_stack[idx][0] == kind:
-                    _, start = open_stack.pop(idx)
+                    _, start, _extra = open_stack.pop(idx)
                     if cursor > start:
                         inline_marks.append(
                             {"kind": kind, "start": start, "end": cursor}
@@ -610,8 +611,24 @@ def _inline_to_text_and_marks(
                 inline_marks.append(
                     {"kind": "code", "start": start, "end": cursor}
                 )
-        elif ctype in ("link_open", "link_close"):
-            continue
+        elif ctype == "link_open":
+            href = child.attrGet("href") or ""
+            open_stack.append(("link", cursor, {"url": href}))
+        elif ctype == "link_close":
+            for idx in range(len(open_stack) - 1, -1, -1):
+                if open_stack[idx][0] == "link":
+                    _, start, extra = open_stack.pop(idx)
+                    url = (extra or {}).get("url", "")
+                    if cursor > start and url:
+                        inline_marks.append(
+                            {
+                                "kind": "link",
+                                "start": start,
+                                "end": cursor,
+                                "url": url,
+                            }
+                        )
+                    break
     return (
         "".join(parts),
         footnote_marks,

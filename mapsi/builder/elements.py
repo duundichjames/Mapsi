@@ -71,7 +71,7 @@ from typing import Any
 
 from lxml import etree
 
-from ..inline_styles import resolve_charpr
+from ..inline_styles import HYPERLINK_CHARPR_ID, resolve_charpr
 from ..parser import Block
 from ..styles import style_name
 from .header import StyleEntry
@@ -213,25 +213,40 @@ def _make_runs_with_inline_marks(
        경계 (boundary) 집합을 만든다.
     2. 정렬·중복제거한 경계로 ``text`` 를 세그먼트로 자른다.
     3. 각 세그먼트에서 활성 마크 집합 = ``{m.kind | m.start ≤ seg.start
-       and seg.end ≤ m.end}``.
-    4. 활성 집합 → ``resolve_charpr`` → charPr ID 결정.
-       단, 비활성 (집합 비었음) 세그먼트는 ``base_char_pr_id`` 를 직접
-       사용 (룩업 결과인 ``"7"`` 이 본문 charPr 와 다를 가능성을 차단).
-    5. 인접 세그먼트의 charPr ID 가 같으면 합쳐서 출력 단순화.
-    6. 빈 세그먼트는 emit 하지 않는다 (한/글이 빈 ``hp:t`` 를 깔끔히
-       처리하지 못함).
+       and seg.end ≤ m.end}``. 링크는 URL 도 함께 기억한다.
+    4. 활성 집합에 ``link`` 가 있으면 charPr 를
+       :data:`mapsi.inline_styles.HYPERLINK_CHARPR_ID` (= 파란 + 밑줄)
+       로 고정하고, 해당 세그먼트는 ``hp:fieldBegin/fieldEnd`` 3-run
+       쌍으로 emit (ADR 0004 결정 1 v0.1.1). 링크 세그먼트는 인접
+       merge 대상이 아니다 (각 필드가 독립 ID 를 가져야 한다).
+    5. ``link`` 가 없는 세그먼트는 기존 룩업 → charPr. 비활성 (집합
+       비었음) 은 ``base_char_pr_id`` 를 직접 사용.
+    6. 인접 non-link 세그먼트의 charPr 가 같으면 합쳐서 출력 단순화.
+    7. 빈 세그먼트는 emit 하지 않는다.
+
+    HYPERLINK 3-run 구조 (python-hwpx `add_hyperlink` 참고)::
+
+        <hp:run charPrIDRef="30">
+          <hp:ctrl>
+            <hp:fieldBegin id="<uuid>" type="HYPERLINK" name="<URL>"
+                           editable="false" dirty="false"/>
+          </hp:ctrl>
+        </hp:run>
+        <hp:run charPrIDRef="30"><hp:t>라벨</hp:t></hp:run>
+        <hp:run charPrIDRef="30">
+          <hp:ctrl><hp:fieldEnd beginIDRef="<uuid>"/></hp:ctrl>
+        </hp:run>
 
     Returns
     -------
     list[lxml Element]
-        ``<hp:run>`` 노드들의 리스트. 각 run 은 ``<hp:t>`` 1 개를
-        가진다 (인라인 마크 단순 케이스).
+        ``<hp:run>`` 노드들의 리스트.
 
     Notes
     -----
-    링크 (``link``) 는 파서가 마크로 등재하지 않으므로 본 함수가 별도
-    처리할 필요가 없다 (라벨 평문이 ``text`` 에 그대로 들어 있다).
     각주/수식과 동시 등장은 호출자 (``build_paragraph``) 가 거부한다.
+    링크가 bold 등 다른 시각 마크와 겹치면 링크 charPr 가 이긴다
+    (클릭 가능성 보존이 조합 시각 서식보다 우선).
     """
     boundaries = {0, len(text)}
     for m in marks:
@@ -247,13 +262,28 @@ def _make_runs_with_inline_marks(
     for lo, hi in zip(sorted_bounds, sorted_bounds[1:]):
         if lo >= hi:
             continue
-        active = {
-            m["kind"]
-            for m in marks
+        active_marks = [
+            m for m in marks
             if int(m["start"]) <= lo and hi <= int(m["end"])
-        }
-        char_pr = resolve_charpr(active) if active else base_char_pr_id
+        ]
+        active_kinds = {m["kind"] for m in active_marks}
         seg_text = text[lo:hi]
+
+        link_mark = next(
+            (m for m in active_marks if m["kind"] == "link" and m.get("url")),
+            None,
+        )
+        if link_mark is not None:
+            url = str(link_mark["url"])
+            runs.extend(_make_hyperlink_runs(seg_text, url))
+            last_char_pr = None
+            last_run = None
+            last_t = None
+            continue
+
+        char_pr = (
+            resolve_charpr(active_kinds) if active_kinds else base_char_pr_id
+        )
         if last_run is not None and char_pr == last_char_pr and last_t is not None:
             last_t.text = (last_t.text or "") + seg_text
             continue
@@ -265,6 +295,60 @@ def _make_runs_with_inline_marks(
         last_run = run
         last_t = t
     return runs
+
+
+def _make_hyperlink_runs(label: str, url: str) -> list[etree._Element]:
+    """HYPERLINK 필드로 감싼 3-run (fieldBegin / text / fieldEnd) 을 만든다.
+
+    한/글이 클릭 시 URL 을 열도록 ``hp:fieldBegin[@type='HYPERLINK']`` 의
+    ``name`` 속성에 URL 을 박는다 (python-hwpx ``add_hyperlink`` 와 동일
+    스펙). 외부 URL (``http``, ``https``, ``mailto``) 은 클릭 시 브라우저 ·
+    메일 클라이언트로 연결되고, 내부 앵커 (``#section``) · 상대 경로 파일
+    링크는 URL 만 메타로 보존된다 (앵커 점프는 v0.3 북마크 구현 때까지
+    deferred).
+
+    Parameters
+    ----------
+    label : str
+        화면에 보일 텍스트 (빈 문자열이면 URL 자체를 표시).
+    url : str
+        필드에 박을 하이퍼링크 타깃.
+
+    Returns
+    -------
+    list[lxml Element]
+        3 개의 ``hp:run`` (fieldBegin / text / fieldEnd).
+    """
+    field_id = str(random.randint(1, 2**31 - 1))
+    cp = HYPERLINK_CHARPR_ID
+    display = label if label else url
+
+    begin_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
+    ctrl_begin = etree.SubElement(begin_run, f"{_HP}ctrl")
+    etree.SubElement(
+        ctrl_begin,
+        f"{_HP}fieldBegin",
+        attrib={
+            "id": field_id,
+            "type": "HYPERLINK",
+            "name": url,
+            "editable": "false",
+            "dirty": "false",
+        },
+    )
+
+    text_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
+    t = etree.SubElement(text_run, f"{_HP}t")
+    t.text = display
+
+    end_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
+    ctrl_end = etree.SubElement(end_run, f"{_HP}ctrl")
+    etree.SubElement(
+        ctrl_end,
+        f"{_HP}fieldEnd",
+        attrib={"beginIDRef": field_id},
+    )
+    return [begin_run, text_run, end_run]
 
 
 def _make_run_with_equations(
