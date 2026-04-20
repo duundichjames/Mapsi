@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 from collections import defaultdict
 
-BASE_PATH = Path('/Users/JaesungJamesPark/Dropbox/works/2025/works/빅데이터핀테크/works/w-md2hwp/mapsi')
+BASE_PATH = Path(__file__).parent
 OUTPUT_DIR = BASE_PATH / 'spec' / 'extracted'
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
