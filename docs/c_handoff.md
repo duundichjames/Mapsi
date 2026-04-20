@@ -34,8 +34,9 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
 - B 가 C 영역까지 임시로 모든 파일에 스텁 또는 동작 구현을 박아둠
 - 작업 브랜치 `feature/core-engine` 에 누적 (heading/list/blockquote/code/
   table/figure/footnote/reference/equation/inline 까지 머지됨)
-- 테스트 333/333 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
-  06_figure + 07_footnote + 08_references + 09_equations + 10_inline 까지)
+- 테스트 334/334 통과 (체크포인트 1 + 04_blockquote_code + 05_table +
+  06_figure + 07_footnote + 08_references + 09_equations + 10_inline +
+  cp4_full 통합 골든까지)
 - 그림은 2 단계로 분리 진행됐고 둘 다 완료:
   - **Phase 6a (완료)** — 파서/walker/빌더가 그림 단락과 캡션을 인식.
     이미지 바이너리 임베드 없음, `그림` 스타일의 자리표시 단락 + 별도
@@ -78,7 +79,7 @@ B 의 인수인계는 [developer_handoff.md](developer_handoff.md) 에 있으며
   YAML 이나 header.xml 이 NFD 로 들어와도 룩업이 깨지지 않음.
 - 결정 기록은 `docs/decisions/` (현재 `0001-table-caption-promotion.md` +
   `0002-equation-marker-mode.md` + `0003-integrate-team-c.md` +
-  `0004-inline-formatting.md` 4 건)
+  `0004-inline-formatting.md` + `0005-cp4-integration-golden.md` 5 건)
 
 ---
 
@@ -216,7 +217,7 @@ B/C 공용 도구. 자세한 사용법은 [README](../README.md) "검증" 섹션
 ## 6. 작업 개시 체크리스트
 
 - [ ] Python 3.11+ 환경 구축, `pip install -e ".[dev]"` 로 설치
-- [ ] `pytest` 실행하여 333/333 통과 확인
+- [ ] `pytest` 실행하여 334/334 통과 확인
 - [ ] `mapsi samples/base/base.md -o output/test.hwpx` 로 변환 1 회 수행 후
       한/글에서 열어 보기 (CP1 의 의미 직접 체험)
 - [ ] [`spec/interfaces.md`](../spec/interfaces.md) 정독, 7 개 계약 시그니처 숙지
