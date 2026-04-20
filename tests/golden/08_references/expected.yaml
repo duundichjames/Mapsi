@@ -1,0 +1,29 @@
+description: |
+  Phase 8 — 참고문헌 섹션 자동 demote 의 종단 검증.
+
+  - 깊이 1 헤딩의 텍스트가 ``REFERENCE_HEADING_TEXTS`` (= "참고문헌",
+    "참고 문헌", "References", "REFERENCES") 의 4 가지 정확 매치 중 하나
+    이면, 그 헤딩 *다음* 부터 다음 깊이 1 헤딩이 등장하기 전까지의
+    paragraph / bullet_list / ordered_list 가 ``reference`` 역할 (=
+    "참고문헌" 스타일, header.xml id=36) 로 변환된다.
+  - 헤딩 자체의 스타일은 그대로 "개요 1" (id=4) — A 의 기존 헤딩 매핑을
+    그대로 따른다 ("# " 는 어떤 텍스트든 헤딩 1 = 개요 1).
+  - 본 픽스처는 한국어 변형 "참고 문헌" (스페이스 1개 포함) 매치를
+    검증한다. 다른 3 가지 변형은 ``test_ast_walker.py`` 의 단위 테스트가
+    별도로 다룬다.
+  - 참고문헌 항목 사이의 빈 줄로 구분되는 각 인용은 독립된 단락으로
+    보존되어야 한다 (한/글 출력에서 항목별 hp:p 1 개씩).
+
+style_sequence:
+  - 본문
+  - 개요 1
+  - 참고문헌
+  - 참고문헌
+  - 참고문헌
+
+text_sequence:
+  - 본문 단락입니다.
+  - 참고 문헌
+  - Mazzucato, Mariana. 2015. Building the Entrepreneurial State. Anthem Press.
+  - "Cumming, Douglas. 2007. \"Government Policy Towards Entrepreneurial Finance.\" Journal of Business Venturing."
+  - OECD. 2021. Venture Capital and Start-Ups in OECD Countries. OECD Publishing.

@@ -150,12 +150,39 @@ for 폴더 in sorted(샘플루트.iterdir()):
 
 초기 단계에는 styleIDRef 시퀀스 비교만으로 충분하며, 후반에 텍스트 내용과 특수 요소(tbl, pic, equation) 의 존재 여부까지 확장하면 된다.
 
-### 3.5. ID 하드코딩 금지
+### 3.5. ID 하드코딩 금지 (이름 기반 룩업 원칙)
 
 - 빌더 코드 내의 ID 숫자 직접 사용 금지
-- `spec/styles.yaml` 에서 로드된 딕셔너리 경유
-- `styles.py` 의 `스타일ID()` 함수를 통한 역할 키워드 → ID 변환
-- 예시, `styleIDRef="4"` 대신 `styleIDRef="{스타일ID('heading_1')}"`
+- `spec/styles.yaml` 은 *이름* 매핑만 정의 (역할 → "본문" / "개요 1" 등)
+- 정수 ID 는 `templates/Contents/header.xml` 이 단일 진실원
+- 빌더는 다음 두 단계로 ID 를 얻음:
+  1. `style_name(style_map, role, depth)` → 한/글 스타일 *이름*
+  2. `parse_style_table(header_xml)[name]` → `StyleEntry(id, paraPrIDRef, charPrIDRef)`
+- 예시, `styleIDRef="4"` 대신 `styleIDRef=entry.id` (entry 는 위 룩업 결과)
+
+### 3.6. 변환 결과 검증 도구 (`mapsi.inspect`)
+
+한/글 정품이 없거나, 한글 뷰어(무료) 의 한계로 스타일 표시줄을 볼
+수 없을 때 변환 결과를 셸에서 1초에 점검하기 위한 도구. 회귀 테스트와
+별도로, 새 픽스처를 작성하거나 어떤 단락이 어떤 스타일을 받았는지
+빠르게 확인할 때 사용한다.
+
+```bash
+# 단락별 (스타일 이름, 텍스트) 출력
+python -m mapsi.inspect output/04_blockquote_code.hwpx
+
+# + 사용된 스타일 정의 + 정합성 점검
+python -m mapsi.inspect output/04_blockquote_code.hwpx --styles
+
+# 빈 단락(secPr 호스트 등) 도 포함
+python -m mapsi.inspect output/04_blockquote_code.hwpx --all
+```
+
+표/그림/각주 같은 복잡한 단계로 갈수록 "내가 만든 출력이 의도한
+스타일을 받았는가" 를 매번 확인할 일이 늘어난다. 본 도구는 그 확인을
+자동화하며, 라이브러리 API (`mapsi.inspect.extract_paragraph_sequence`)
+로도 사용 가능해 골든 회귀 테스트와 동일한 추출 로직을 공유한다 (단일
+진실원).
 
 ---
 

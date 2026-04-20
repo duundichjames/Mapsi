@@ -1,0 +1,56 @@
+###
+# Mapsi 스타일 카탈로그 (정책 = 마크다운 역할 → 한/글 스타일 이름)
+#
+# 본 파일은 "역할 → 스타일 이름" 매핑만 정의한다. 실제 스타일 ID 정수와
+# paraPrIDRef / charPrIDRef 는 `templates/Contents/header.xml` 의 진실원에서
+# 런타임에 조회한다 (mapsi.builder.header.parse_style_table).
+#
+# - role: 마크다운/문맥에서 추출된 역할 키워드 (영문 snake_case)
+# - 값:   한/글 header.xml 에 등록된 스타일 이름 (사용자 노출 문자열)
+#
+# 스타일 ID 가 본 파일에 없는 이유는 docs/c_handoff.md "header.xml 의
+# 불변성" 절 및 README "이름 기반 룩업" 설계 노트 참조.
+###
+
+version: 1
+header_template: templates/Contents/header.xml
+
+# 본문/제목 — 한/글 내장 스타일에 직접 대응
+paragraph: 본문
+
+heading:
+  1: 개요 1
+  2: 개요 2
+  3: 개요 3
+  4: 개요 4
+  5: 개요 5
+  6: 개요 6
+
+# 순서 없는 목록 — 마크다운 들여쓰기 깊이별 분리
+bullet_list:
+  1: 네모
+  2: 동그라미
+  3: 줄
+
+# 순서 있는 목록 — 번호 텍스트는 원문 보존, 자동번호 사용 안 함
+ordered_list:
+  1: 번호1
+  2: 번호2
+  3: 번호3
+
+# 인용 / 코드
+blockquote: 인용
+code_block: 코드
+
+# 표
+table_cell: 표내용
+table_caption: 표캡션
+
+# 그림
+figure: 그림
+figure_caption: 그림캡션
+
+# 각주 / 참고문헌 / 메모
+footnote: 각주
+reference: 참고문헌
+memo: 메모
