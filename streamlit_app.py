@@ -11,8 +11,12 @@ from pathlib import Path
 
 import streamlit as st
 
+from mapsi.cli import apply_project_dotenv
 from mapsi.config import load_style_map
 from mapsi.converter import md_to_hwpx
+
+
+apply_project_dotenv()
 
 
 REPO_ROOT = Path(__file__).resolve().parent

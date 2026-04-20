@@ -94,12 +94,45 @@ def md_to_hwpx(
 _DEFAULT_DPI = 96.0
 _HWPUNIT_PER_INCH = 7200.0
 
+# 본문 가용 폭 (HWPUNIT). 기본 템플릿 = A4 세로 (pagePr@width=59528) 에
+# 좌/우 여백 각 8504 를 뺀 값 = 42520. 이미지가 이보다 넓으면 한/글에서
+# 오른쪽이 본문 영역 밖으로 삐져나가 잘려 보이므로, 환산 시점에 비율을
+# 유지한 채 이 값으로 축소한다. 페이지 설정이 달라질 가능성이 생기면
+# 향후 pagePr 에서 동적으로 계산하도록 바꾼다.
+_BODY_WIDTH_HWPUNIT = 42520
+
 # 원본 이미지를 찾지 못했을 때 (allow_missing_images=True) 대신 삽입할 번들
 # placeholder. 패키지에 동봉되어 pip install 환경에서도 접근 가능하다
 # (``pyproject.toml`` 의 ``tool.setuptools.package-data`` 참조).
 _MISSING_IMAGE_PLACEHOLDER = (
     Path(__file__).resolve().parent / "assets" / "image_not_found.png"
 )
+
+
+def _fit_image_to_body(
+    width_px: int,
+    height_px: int,
+    dpi_x: float,
+    dpi_y: float,
+    max_width: int = _BODY_WIDTH_HWPUNIT,
+) -> tuple[int, int]:
+    """픽셀 치수를 HWPUNIT 으로 환산하고, 본문 폭 초과 시 비율 유지 축소.
+
+    환산 규칙은 기존과 동일 (``px * 7200 / dpi``). 다만 결과 폭이
+    ``max_width`` 를 넘으면 ``w, h`` 모두 동일 배율로 줄여 비율을
+    보존한다. 원본이 이미 ``max_width`` 이하이면 변경 없이 반환 (강제
+    확대는 하지 않음).
+
+    세로에는 상한을 두지 않는다 — 세로로 긴 그림은 자연스럽게 다음
+    페이지로 넘어가도록 한/글에 맡긴다.
+    """
+    w = int(round(width_px * _HWPUNIT_PER_INCH / dpi_x))
+    h = int(round(height_px * _HWPUNIT_PER_INCH / dpi_y))
+    if w > max_width and w > 0:
+        scale = max_width / w
+        w = max_width
+        h = max(1, int(round(h * scale)))
+    return w, h
 
 
 def _register_figure_images(
@@ -155,12 +188,11 @@ def _register_figure_images(
             width_px, height_px = img.size
             dpi_x, dpi_y = img.info.get("dpi", (_DEFAULT_DPI, _DEFAULT_DPI))
         item_id, entry = register_image(_MISSING_IMAGE_PLACEHOLDER, work_dir)
+        w_hwp, h_hwp = _fit_image_to_body(width_px, height_px, dpi_x, dpi_y)
         placeholder_info = {
             "binary_item_id": item_id,
-            "width_hwpunit": int(round(width_px * _HWPUNIT_PER_INCH / dpi_x)),
-            "height_hwpunit": int(
-                round(height_px * _HWPUNIT_PER_INCH / dpi_y)
-            ),
+            "width_hwpunit": w_hwp,
+            "height_hwpunit": h_hwp,
         }
         entries.append(entry)
         return placeholder_info
@@ -190,12 +222,11 @@ def _register_figure_images(
             width_px, height_px = img.size
             dpi_x, dpi_y = img.info.get("dpi", (_DEFAULT_DPI, _DEFAULT_DPI))
         item_id, entry = register_image(resolved, work_dir)
+        w_hwp, h_hwp = _fit_image_to_body(width_px, height_px, dpi_x, dpi_y)
         image_map[src] = {
             "binary_item_id": item_id,
-            "width_hwpunit": int(round(width_px * _HWPUNIT_PER_INCH / dpi_x)),
-            "height_hwpunit": int(
-                round(height_px * _HWPUNIT_PER_INCH / dpi_y)
-            ),
+            "width_hwpunit": w_hwp,
+            "height_hwpunit": h_hwp,
         }
         entries.append(entry)
     return image_map, entries
