@@ -231,8 +231,19 @@ def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
                 )
             role = list_stack[-1]
             depth = len(list_stack)
-            text = _first_inline_text_in_item(tokens, i)
-            blocks.append(Block(role=role, depth=depth, text=text))
+            text, foot_marks, eq_marks, inline_marks = _first_inline_in_item(
+                tokens, i
+            )
+            meta: dict[str, Any] = {}
+            if foot_marks:
+                meta["footnote_marks"] = foot_marks
+            if eq_marks:
+                meta["equation_marks"] = eq_marks
+            if inline_marks:
+                meta["inline_marks"] = inline_marks
+            blocks.append(
+                Block(role=role, depth=depth, text=text, meta=meta)
+            )
             i += 1
             continue
 
@@ -395,21 +406,44 @@ def _emit_code_lines(code_tok: Token) -> list[Block]:
 
 
 def _first_inline_text_in_item(tokens: list[Token], item_open_idx: int) -> str:
-    """``list_item_open`` 직후의 첫 inline 텍스트를 반환한다.
+    """``list_item_open`` 직후의 첫 inline 텍스트만 반환한다 (마크 정보 버림).
 
     중첩 list 가 시작되거나 ``list_item_close`` 를 만나면 그 이전까지만
     훑는다 (= 자기 자신의 텍스트만 가져오고 중첩 항목 텍스트는 무시).
     항목이 비어있거나 텍스트 없는 항목이면 빈 문자열 반환.
+
+    인라인 마크 (Phase 10) 까지 함께 보존하고 싶으면
+    :func:`_first_inline_in_item` 을 사용한다.
+    """
+    text, *_ = _first_inline_in_item(tokens, item_open_idx)
+    return text
+
+
+def _first_inline_in_item(
+    tokens: list[Token], item_open_idx: int
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """``list_item_open`` 직후의 첫 inline 토큰을 4-tuple 로 분해해 반환한다.
+
+    반환 형식과 의미는 :func:`_inline_to_text_and_marks` 와 동일:
+    ``(text, footnote_marks, equation_marks, inline_marks)``.
+
+    중첩 list 가 시작되거나 ``list_item_close`` 를 만나면 그 이전까지만
+    훑는다. 항목이 비어 있으면 모두 빈 값 반환.
+
+    Phase 10 작업 시점까지는 list_item 의 인라인 마크가 흡수돼 사라졌으나
+    (paragraph 경로만 _inline_to_text_and_marks 를 사용했음), Phase 11
+    CP4 통합 골든이 이 누락을 잡았다. 같은 인라인 처리 헬퍼를 list_item
+    경로에서도 공유한다.
     """
     j = item_open_idx + 1
     while j < len(tokens):
         t = tokens[j]
         if t.type == "list_item_close" or t.type in _LIST_OPEN_TYPES:
-            return ""
+            return "", [], [], []
         if t.type == "inline":
-            return _inline_to_text(t)
+            return _inline_to_text_and_marks(t)
         j += 1
-    return ""
+    return "", [], [], []
 
 
 def _extract_solo_figure(inline_tok: Token) -> tuple[str, str] | None:

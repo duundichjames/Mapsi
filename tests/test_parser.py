@@ -660,3 +660,72 @@ class TestInlineFormattingMarks:
         b = parse_markdown(md)[0]
         assert b.text == "X Y."
         assert "inline_marks" not in b.meta
+
+
+class TestListItemInlineMarks:
+    """리스트 항목 (bullet/ordered) 안의 인라인 서식도 paragraph 와
+    동일하게 ``meta["inline_marks"]`` 로 보존되는지.
+
+    Phase 11 CP4 통합 골든이 노출시킨 회귀 — Phase 10 작업이 paragraph
+    경로만 ``_inline_to_text_and_marks`` 를 사용하고 list_item 경로는
+    ``_inline_to_text`` (마크 폐기) 만 사용했었다. 이 테스트들은 그
+    누락이 다시 들어오지 않도록 잠근다.
+    """
+
+    def test_bullet_item_bold_creates_inline_mark(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "- **첫째** 항목\n- **둘째** 항목\n")
+        blocks = parse_markdown(md)
+        assert [(b.role, b.text) for b in blocks] == [
+            ("bullet_list", "첫째 항목"),
+            ("bullet_list", "둘째 항목"),
+        ]
+        assert blocks[0].meta["inline_marks"] == [
+            {"kind": "bold", "start": 0, "end": 2}
+        ]
+        assert blocks[1].meta["inline_marks"] == [
+            {"kind": "bold", "start": 0, "end": 2}
+        ]
+
+    def test_ordered_item_italic_and_code_marks(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "1. *기울인* `func()` 호출\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "ordered_list"
+        assert blk.text == "기울인 func() 호출"
+        kinds = sorted(m["kind"] for m in blk.meta["inline_marks"])
+        assert kinds == ["code", "italic"]
+
+    def test_ordered_item_link_label_kept_url_dropped(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR 0004 결정 1 이 list 경로에서도 동일 적용."""
+        md = _write(tmp_path, "1. [한컴](https://hancom.com) 사이트\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "ordered_list"
+        assert blk.text == "한컴 사이트"
+        assert "inline_marks" not in blk.meta
+
+    def test_nested_bullet_inherits_inline_marks(self, tmp_path: Path) -> None:
+        """깊이 2 의 항목도 동일하게 inline_marks 를 보존."""
+        md = _write(
+            tmp_path,
+            "- 1단계 평문\n"
+            "  - 2단계 **굵게**\n",
+        )
+        blocks = parse_markdown(md)
+        assert [(b.role, b.depth, b.text) for b in blocks] == [
+            ("bullet_list", 1, "1단계 평문"),
+            ("bullet_list", 2, "2단계 굵게"),
+        ]
+        assert "inline_marks" not in blocks[0].meta
+        assert blocks[1].meta["inline_marks"] == [
+            {"kind": "bold", "start": 4, "end": 6}
+        ]
+
+    def test_plain_list_item_has_no_inline_marks_key(
+        self, tmp_path: Path
+    ) -> None:
+        """인라인 서식 없는 list 항목은 meta 에 inline_marks 키가 없음."""
+        md = _write(tmp_path, "- 그냥 평문 항목\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "bullet_list"
+        assert "inline_marks" not in blk.meta
