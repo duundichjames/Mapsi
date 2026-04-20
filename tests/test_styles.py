@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import unicodedata
+
 import pytest
 
 from mapsi.config import load_style_map
@@ -75,3 +77,23 @@ class TestStyleName:
         """단순 역할은 depth 인자를 무시해야 한다."""
         assert style_name(style_map, "paragraph") == "본문"
         assert style_name(style_map, "paragraph", 5) == "본문"
+
+    def test_returns_nfc_even_when_yaml_value_is_nfd(self):
+        """yaml 값이 NFD (자모 분리) 라도 반환은 NFC 로 정규화된다.
+
+        ``style_name`` 의 출구 정규화는 ``parse_style_table`` 의 입구
+        정규화와 짝을 이루어, 어느 쪽이 NFD 로 들어와도 빌더의 dict
+        룩업이 안전히 매치되도록 한다.
+        """
+        nfd_value = unicodedata.normalize("NFD", "개요 1")
+        assert nfd_value != "개요 1"
+
+        nfd_map = {"heading": {1: nfd_value}, "paragraph": nfd_value}
+
+        out = style_name(nfd_map, "heading", 1)
+        assert out == "개요 1"
+        assert unicodedata.is_normalized("NFC", out)
+
+        out2 = style_name(nfd_map, "paragraph")
+        assert out2 == "개요 1"
+        assert unicodedata.is_normalized("NFC", out2)
