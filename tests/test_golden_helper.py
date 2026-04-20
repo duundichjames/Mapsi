@@ -52,6 +52,7 @@ def test_style_ids_are_normalized_to_names(headings_sample_hwpx: Path) -> None:
     assert "개요 3" in style_names
     assert "개요 4" in style_names
     assert "개요 5" in style_names
+    assert "개요 6" in style_names
     for name in style_names:
         assert not name.startswith("<unknown:"), f"미정의 스타일 ID: {name}"
 
@@ -59,18 +60,28 @@ def test_style_ids_are_normalized_to_names(headings_sample_hwpx: Path) -> None:
 def test_known_heading_paragraphs_in_01_headings(
     headings_sample_hwpx: Path,
 ) -> None:
-    """01_headings 정답의 알려진 헤딩 위치(15~20)가 기대 시퀀스와 일치."""
+    """01_headings 정답의 알려진 헤딩 위치가 기대 시퀀스와 일치.
+
+    01_headings 샘플 재생성 시 헤딩 블록이 샘플 상단에서 몇 번째
+    단락에 오는지는 front matter 길이에 따라 달라진다. 그래서 여기
+    서는 "'개요 1'~'개요 6' 이 순서대로 등장하고, 각 헤딩의 텍스트
+    가 제목1~제목6 이다" 라는 더 헐거운 조건으로 확인한다.
+    """
     seq = extract_paragraph_sequence(headings_sample_hwpx)
-    expected_slice = [
+    heading_infos = [
+        (info.style_name, info.text)
+        for info in seq
+        if info.style_name.startswith("개요 ")
+    ]
+    assert heading_infos == [
+        ("개요 1", "제목1"),
         ("개요 1", "제목1"),
         ("개요 2", "제목2"),
         ("개요 3", "제목3"),
         ("개요 4", "제목4"),
         ("개요 5", "제목5"),
-        ("개요 5", ""),
+        ("개요 6", "제목6"),
     ]
-    actual_slice = [(info.style_name, info.text) for info in seq[15:21]]
-    assert actual_slice == expected_slice
 
 
 def test_filter_nonempty_drops_empty_text(headings_sample_hwpx: Path) -> None:
@@ -100,6 +111,7 @@ def test_expected_yaml_01_headings_content(golden_dir: Path) -> None:
         "개요 3",
         "개요 4",
         "개요 5",
+        "개요 6",
         "본문",
     ]
     assert data["text_sequence"] == [
@@ -110,5 +122,6 @@ def test_expected_yaml_01_headings_content(golden_dir: Path) -> None:
         "제목3",
         "제목4",
         "제목5",
+        "제목6",
         "본문으로 복귀한 단락입니다.",
     ]
