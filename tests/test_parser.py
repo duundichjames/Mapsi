@@ -354,7 +354,7 @@ def test_softbreak_becomes_newline(tmp_path: Path) -> None:
 
 
 def test_round_trip_01_headings_fixture(repo_root: Path) -> None:
-    """``tests/golden/01_headings/input.md`` 가 의도한 8 블록을 만든다."""
+    """``tests/golden/01_headings/input.md`` 가 의도한 9 블록을 만든다."""
     md = repo_root / "tests" / "golden" / "01_headings" / "input.md"
     blocks = parse_markdown(md)
     assert [(b.role, b.depth, b.text) for b in blocks] == [
@@ -365,6 +365,7 @@ def test_round_trip_01_headings_fixture(repo_root: Path) -> None:
         ("heading", 3, "제목3"),
         ("heading", 4, "제목4"),
         ("heading", 5, "제목5"),
+        ("heading", 6, "제목6"),
         ("paragraph", 0, "본문으로 복귀한 단락입니다."),
     ]
 
