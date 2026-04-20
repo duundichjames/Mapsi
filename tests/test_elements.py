@@ -917,27 +917,50 @@ class TestInlineFormattingParagraph:
 
 
 class TestHyperlinkField:
-    """``link`` inline mark 가 ``hp:fieldBegin/fieldEnd`` HYPERLINK 쌍으로
-    감싸지는지 (ADR 0004 결정 1 v0.1.1)."""
+    """``link`` inline mark 가 한/글 정식 HYPERLINK 필드로 감싸지는지
+    (ADR 0004 결정 1 v0.1.2).
+
+    "정식 형태" 란 한/글이 직접 저장한 HWPX (참고: python-hwpx
+    ``shared/hwpx/fixtures/fields/10_fieldcodes_min.hwpx``) 에서 관찰되는:
+
+    - ``fieldBegin/@name=""`` (URL 은 ``<hp:parameters>`` 에 들어감)
+    - ``fieldBegin/@editable="0"``, ``@dirty="1"``
+    - ``fieldBegin/@fieldid`` + ``fieldEnd/@fieldid`` 쌍
+    - ``<hp:parameters cnt="7">`` 하위의 ``Prop / Command / Path /
+      Category / TargetType / DocOpenType / ToolTip``
+    - ``fieldEnd`` 뒤 빈 ``<hp:t/>``
+    """
 
     @staticmethod
     def _dump(p) -> list[dict]:
-        """hp:run 을 {cp, text, field, url, end_ref} 로 납작하게 만든다."""
+        """hp:run 을 {cp, text, field_begin, field_end, params} 로 납작하게."""
         out = []
         for run in p.findall(f"{HP_NS}run"):
             cp = run.get("charPrIDRef")
             t = run.find(f"{HP_NS}t")
             fb = run.find(f"{HP_NS}ctrl/{HP_NS}fieldBegin")
             fe = run.find(f"{HP_NS}ctrl/{HP_NS}fieldEnd")
+
+            begin = None
+            params: dict[str, str] = {}
+            if fb is not None:
+                begin = dict(fb.attrib)
+                params_node = fb.find(f"{HP_NS}parameters")
+                if params_node is not None:
+                    for child in params_node:
+                        key = child.get("name")
+                        if key:
+                            params[key] = child.text or ""
+            end = None
+            if fe is not None:
+                end = dict(fe.attrib)
+
             out.append({
                 "cp": cp,
                 "text": t.text if t is not None else None,
-                "field_begin": (
-                    {"id": fb.get("id"), "type": fb.get("type"),
-                     "name": fb.get("name")}
-                    if fb is not None else None
-                ),
-                "field_end_ref": fe.get("beginIDRef") if fe is not None else None,
+                "field_begin": begin,
+                "field_end": end,
+                "params": params,
             })
         return out
 
@@ -962,16 +985,33 @@ class TestHyperlinkField:
         dumped = self._dump(p)
         assert len(dumped) == 5
         assert dumped[0]["cp"] == "7" and dumped[0]["text"] == "앞 "
-        assert dumped[1]["cp"] == "30"
-        assert dumped[1]["field_begin"] == {
-            "id": dumped[1]["field_begin"]["id"],
-            "type": "HYPERLINK",
-            "name": "https://example.com",
-        }
-        assert dumped[2]["cp"] == "30" and dumped[2]["text"] == "링크"
-        assert dumped[3]["cp"] == "30"
-        assert dumped[3]["field_end_ref"] == dumped[1]["field_begin"]["id"]
         assert dumped[4]["cp"] == "7" and dumped[4]["text"] == " 뒤"
+
+        begin = dumped[1]["field_begin"]
+        assert begin is not None
+        assert begin["type"] == "HYPERLINK"
+        assert begin["name"] == ""
+        assert begin["editable"] == "0"
+        assert begin["dirty"] == "1"
+        assert begin["fieldid"]
+        assert dumped[1]["params"]["Path"] == "https://example.com"
+        assert dumped[1]["params"]["Category"] == "HWPHYPERLINK_TYPE_URL"
+        assert dumped[1]["params"]["DocOpenType"] == (
+            "HWPHYPERLINK_JUMP_CURRENTTAB"
+        )
+        assert dumped[1]["params"]["ToolTip"] == "링크"
+        assert dumped[1]["params"]["Command"].startswith(
+            r"https\://example.com|"
+        )
+
+        assert dumped[2]["cp"] == "30" and dumped[2]["text"] == "링크"
+
+        end = dumped[3]["field_end"]
+        assert end is not None
+        assert end["beginIDRef"] == begin["id"]
+        assert end["fieldid"] == begin["fieldid"]
+        trailing_t = p.findall(f"{HP_NS}run")[3].find(f"{HP_NS}t")
+        assert trailing_t is not None and (trailing_t.text or "") == ""
 
     def test_multiple_links_each_get_independent_field_ids(
         self, style_map, style_table
@@ -991,13 +1031,19 @@ class TestHyperlinkField:
         p = build_paragraph(block, style_map, style_table)
         dumped = self._dump(p)
         begins = [d for d in dumped if d["field_begin"] is not None]
-        ends = [d for d in dumped if d["field_end_ref"] is not None]
+        ends = [d for d in dumped if d["field_end"] is not None]
         assert len(begins) == len(ends) == 2
-        assert begins[0]["field_begin"]["name"] == "https://a"
-        assert begins[1]["field_begin"]["name"] == "https://b"
+        assert begins[0]["params"]["Path"] == "https://a"
+        assert begins[1]["params"]["Path"] == "https://b"
         assert begins[0]["field_begin"]["id"] != begins[1]["field_begin"]["id"]
-        assert ends[0]["field_end_ref"] == begins[0]["field_begin"]["id"]
-        assert ends[1]["field_end_ref"] == begins[1]["field_begin"]["id"]
+        assert (
+            begins[0]["field_begin"]["fieldid"]
+            != begins[1]["field_begin"]["fieldid"]
+        )
+        assert ends[0]["field_end"]["beginIDRef"] == begins[0]["field_begin"]["id"]
+        assert ends[0]["field_end"]["fieldid"] == begins[0]["field_begin"]["fieldid"]
+        assert ends[1]["field_end"]["beginIDRef"] == begins[1]["field_begin"]["id"]
+        assert ends[1]["field_end"]["fieldid"] == begins[1]["field_begin"]["fieldid"]
 
     def test_link_overlapping_bold_prefers_hyperlink_charpr(
         self, style_map, style_table
@@ -1016,17 +1062,16 @@ class TestHyperlinkField:
         )
         p = build_paragraph(block, style_map, style_table)
         dumped = self._dump(p)
-        text_runs = [d for d in dumped if d["text"] is not None]
+        text_runs = [d for d in dumped if d["text"] == "굵은링크"]
         assert [(d["cp"], d["text"]) for d in text_runs] == [("30", "굵은링크")]
         assert any(
-            d["field_begin"] and d["field_begin"]["name"] == "https://x"
-            for d in dumped
+            d["params"].get("Path") == "https://x" for d in dumped
         )
 
-    def test_anchor_link_keeps_url_as_fragment(
+    def test_anchor_link_uses_bookmark_category(
         self, style_map, style_table
     ) -> None:
-        """내부 앵커 URL 도 그대로 name 에 보존된다 (점프는 v0.3)."""
+        """내부 앵커 (``#...``) 는 Category=HWPHYPERLINK_TYPE_BOOKMARK."""
         block = Block(
             role="paragraph",
             text="내부",
@@ -1039,7 +1084,32 @@ class TestHyperlinkField:
         p = build_paragraph(block, style_map, style_table)
         dumped = self._dump(p)
         begin = next(d for d in dumped if d["field_begin"] is not None)
-        assert begin["field_begin"]["name"] == "#sec"
+        assert begin["params"]["Path"] == "#sec"
+        assert begin["params"]["Category"] == "HWPHYPERLINK_TYPE_BOOKMARK"
+
+    def test_command_param_escapes_colon(
+        self, style_map, style_table
+    ) -> None:
+        """Command 문자열 안의 ``:`` 는 한/글 규약상 ``\\:`` 로 escape."""
+        block = Block(
+            role="paragraph",
+            text="X",
+            meta={
+                "inline_marks": [
+                    {
+                        "kind": "link",
+                        "start": 0,
+                        "end": 1,
+                        "url": "https://example.com",
+                    }
+                ],
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        dumped = self._dump(p)
+        begin = next(d for d in dumped if d["field_begin"] is not None)
+        assert begin["params"]["Command"].startswith(r"https\://example.com|")
+        assert begin["params"]["Path"] == "https://example.com"
 
     def test_empty_url_link_ignored(self, style_map, style_table) -> None:
         """URL 이 빈 문자열인 link mark 는 필드로 감싸지 않고 평문 처리."""
@@ -1054,7 +1124,7 @@ class TestHyperlinkField:
         )
         p = build_paragraph(block, style_map, style_table)
         dumped = self._dump(p)
-        assert dumped == [{
-            "cp": "7", "text": "X",
-            "field_begin": None, "field_end_ref": None,
-        }]
+        assert [
+            (d["cp"], d["text"], d["field_begin"], d["field_end"])
+            for d in dumped
+        ] == [("7", "X", None, None)]

@@ -300,12 +300,49 @@ def _make_runs_with_inline_marks(
 def _make_hyperlink_runs(label: str, url: str) -> list[etree._Element]:
     """HYPERLINK 필드로 감싼 3-run (fieldBegin / text / fieldEnd) 을 만든다.
 
-    한/글이 클릭 시 URL 을 열도록 ``hp:fieldBegin[@type='HYPERLINK']`` 의
-    ``name`` 속성에 URL 을 박는다 (python-hwpx ``add_hyperlink`` 와 동일
-    스펙). 외부 URL (``http``, ``https``, ``mailto``) 은 클릭 시 브라우저 ·
-    메일 클라이언트로 연결되고, 내부 앵커 (``#section``) · 상대 경로 파일
-    링크는 URL 만 메타로 보존된다 (앵커 점프는 v0.3 북마크 구현 때까지
-    deferred).
+    한/글이 *실제로 클릭을 활성화* 하려면 ``hp:fieldBegin[@name]`` 에 URL 을
+    넣는 축약형 (python-hwpx ``add_hyperlink``) 으로는 부족하고, 한/글이
+    export 하는 "정식" 파라미터 블록이 필요하다. 본 함수는 한/글이 직접
+    저장한 ``python-hwpx`` fixture (``shared/hwpx/fixtures/fields/
+    10_fieldcodes_min.hwpx``) 에서 추출한 다음 형태를 emit 한다 (v0.1.2)::
+
+        <hp:run charPrIDRef="30">
+          <hp:ctrl>
+            <hp:fieldBegin id="<A>" type="HYPERLINK" name=""
+                           editable="0" dirty="1"
+                           zorder="-1" fieldid="<B>" metaTag="">
+              <hp:parameters cnt="7" name="">
+                <hp:integerParam name="Prop">0</hp:integerParam>
+                <hp:stringParam name="Command"><ESCAPED_URL>|<TT>;1;0;0;</hp:stringParam>
+                <hp:stringParam name="Path"><URL></hp:stringParam>
+                <hp:stringParam name="Category"><HWPHYPERLINK_TYPE_*></hp:stringParam>
+                <hp:stringParam name="TargetType">HWPHYPERLINK_TARGET_BOOKMARK</hp:stringParam>
+                <hp:stringParam name="DocOpenType">HWPHYPERLINK_JUMP_CURRENTTAB</hp:stringParam>
+                <hp:stringParam name="ToolTip"><TT></hp:stringParam>
+              </hp:parameters>
+            </hp:fieldBegin>
+          </hp:ctrl>
+        </hp:run>
+        <hp:run charPrIDRef="30"><hp:t>라벨</hp:t></hp:run>
+        <hp:run charPrIDRef="30">
+          <hp:ctrl><hp:fieldEnd beginIDRef="<A>" fieldid="<B>"/></hp:ctrl>
+          <hp:t/>
+        </hp:run>
+
+    ``id`` 와 ``fieldid`` 는 각각 *독립* 난수이지만, ``fieldEnd`` 의
+    ``beginIDRef`` 는 반드시 ``fieldBegin/@id`` 와 같고, ``fieldEnd/@fieldid``
+    는 ``fieldBegin/@fieldid`` 와 같다 (한/글이 쌍을 ID 둘 모두로 매칭).
+
+    Category 규칙 (URL 모양으로 결정):
+
+    - ``#...`` (앵커) → ``HWPHYPERLINK_TYPE_BOOKMARK``
+    - 그 외 (``http``, ``https``, ``mailto``, 상대/절대 경로) →
+      ``HWPHYPERLINK_TYPE_URL``
+
+    Command 문자열의 ``:`` 는 한/글 규약상 ``\\:`` 로 escape 한다 (구분자와
+    충돌 방지). ``|`` 는 파라미터 구분자이므로 URL 에 실제로 들어 있으면
+    ``\\|`` 로 escape 한다. ``Path`` 에는 escape 하지 않은 원 URL 을 그대로
+    둔다 (한/글이 실제 열기에 사용하는 값).
 
     Parameters
     ----------
@@ -320,22 +357,59 @@ def _make_hyperlink_runs(label: str, url: str) -> list[etree._Element]:
         3 개의 ``hp:run`` (fieldBegin / text / fieldEnd).
     """
     field_id = str(random.randint(1, 2**31 - 1))
+    inst_id = str(random.randint(1, 2**31 - 1))
     cp = HYPERLINK_CHARPR_ID
     display = label if label else url
+    tooltip = display
+    category = (
+        "HWPHYPERLINK_TYPE_BOOKMARK" if url.startswith("#")
+        else "HWPHYPERLINK_TYPE_URL"
+    )
+    escaped_url = url.replace("\\", "\\\\").replace(":", r"\:").replace("|", r"\|")
+    escaped_tooltip = tooltip.replace(";", r"\;")
+    command_value = f"{escaped_url}|{escaped_tooltip};1;0;0;"
 
     begin_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
     ctrl_begin = etree.SubElement(begin_run, f"{_HP}ctrl")
-    etree.SubElement(
+    field_begin = etree.SubElement(
         ctrl_begin,
         f"{_HP}fieldBegin",
         attrib={
             "id": field_id,
             "type": "HYPERLINK",
-            "name": url,
-            "editable": "false",
-            "dirty": "false",
+            "name": "",
+            "editable": "0",
+            "dirty": "1",
+            "zorder": "-1",
+            "fieldid": inst_id,
+            "metaTag": "",
         },
     )
+    params = etree.SubElement(
+        field_begin,
+        f"{_HP}parameters",
+        attrib={"cnt": "7", "name": ""},
+    )
+
+    def _int_param(name: str, value: str) -> None:
+        node = etree.SubElement(
+            params, f"{_HP}integerParam", attrib={"name": name}
+        )
+        node.text = value
+
+    def _str_param(name: str, value: str) -> None:
+        node = etree.SubElement(
+            params, f"{_HP}stringParam", attrib={"name": name}
+        )
+        node.text = value
+
+    _int_param("Prop", "0")
+    _str_param("Command", command_value)
+    _str_param("Path", url)
+    _str_param("Category", category)
+    _str_param("TargetType", "HWPHYPERLINK_TARGET_BOOKMARK")
+    _str_param("DocOpenType", "HWPHYPERLINK_JUMP_CURRENTTAB")
+    _str_param("ToolTip", tooltip)
 
     text_run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": cp})
     t = etree.SubElement(text_run, f"{_HP}t")
@@ -346,8 +420,9 @@ def _make_hyperlink_runs(label: str, url: str) -> list[etree._Element]:
     etree.SubElement(
         ctrl_end,
         f"{_HP}fieldEnd",
-        attrib={"beginIDRef": field_id},
+        attrib={"beginIDRef": field_id, "fieldid": inst_id},
     )
+    etree.SubElement(end_run, f"{_HP}t")
     return [begin_run, text_run, end_run]
 
 
