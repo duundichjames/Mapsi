@@ -194,7 +194,16 @@ def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
                     _inline_to_text_and_marks(inline)
                 )
                 if blockquote_depth > 0:
-                    blocks.append(Block(role="blockquote", text=text))
+                    bq_meta: dict[str, Any] = {}
+                    if footnote_marks:
+                        bq_meta["footnote_marks"] = footnote_marks
+                    if equation_marks:
+                        bq_meta["equation_marks"] = equation_marks
+                    if inline_marks:
+                        bq_meta["inline_marks"] = inline_marks
+                    blocks.append(
+                        Block(role="blockquote", text=text, meta=bq_meta)
+                    )
                 elif not list_stack:
                     meta: dict[str, Any] = {}
                     if footnote_marks:

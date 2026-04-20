@@ -730,3 +730,67 @@ class TestListItemInlineMarks:
         blk = parse_markdown(md)[0]
         assert blk.role == "bullet_list"
         assert "inline_marks" not in blk.meta
+
+
+class TestBlockquoteInlineMarks:
+    """blockquote 안의 인라인 서식·각주·인라인 수식이 paragraph / list_item
+    과 동일하게 ``meta`` 에 보존되는지.
+
+    Phase 11 CP4 통합 골든을 인용문/코드 블록까지 확장하면서 발견된 회귀 —
+    ``parser.py`` 의 ``blockquote_depth > 0`` 분기가 ``Block`` 을 만들 때
+    ``text`` 만 사용하고 ``footnote_marks/equation_marks/inline_marks`` 를
+    조용히 폐기하고 있었다. list_item 누락과 동일한 패턴이며, 같은 회귀가
+    재발하지 않도록 잠근다.
+    """
+
+    def test_blockquote_bold_creates_inline_mark(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "> **첫째** 인용\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "첫째 인용"
+        assert blk.meta["inline_marks"] == [
+            {"kind": "bold", "start": 0, "end": 2}
+        ]
+
+    def test_blockquote_italic_and_code_marks(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "> *기울인* `func()` 를 호출\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "기울인 func() 를 호출"
+        kinds = sorted(m["kind"] for m in blk.meta["inline_marks"])
+        assert kinds == ["code", "italic"]
+
+    def test_blockquote_link_label_kept_url_dropped(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR 0004 결정 1 이 blockquote 경로에서도 동일 적용."""
+        md = _write(tmp_path, "> [한컴](https://hancom.com) 출처\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "한컴 출처"
+        assert "inline_marks" not in blk.meta
+
+    def test_blockquote_footnote_mark_is_kept(self, tmp_path: Path) -> None:
+        """blockquote 안의 각주 참조도 footnote_marks 로 보존돼야 한다."""
+        md = _write(
+            tmp_path,
+            "> 인용문에 각주가 붙는다[^q].\n"
+            "\n"
+            "[^q]: 이것이 인용문 각주의 본문이다.\n",
+        )
+        blocks = parse_markdown(md)
+        bq = next(b for b in blocks if b.role == "blockquote")
+        assert bq.text == "인용문에 각주가 붙는다."
+        assert "footnote_marks" in bq.meta
+        assert len(bq.meta["footnote_marks"]) == 1
+        mark = bq.meta["footnote_marks"][0]
+        assert mark["kind"] == "footnote_ref"
+        assert isinstance(mark["footnote_id"], int)
+
+    def test_plain_blockquote_has_no_marks_keys(self, tmp_path: Path) -> None:
+        """인라인 서식·각주·수식이 없는 인용문은 meta 가 비어 있어야 한다."""
+        md = _write(tmp_path, "> 그냥 평문 인용\n")
+        blk = parse_markdown(md)[0]
+        assert blk.role == "blockquote"
+        assert blk.text == "그냥 평문 인용"
+        assert blk.meta == {} or blk.meta is None
