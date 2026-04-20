@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,6 +70,11 @@ def parse_style_table(header_bytes: bytes) -> dict[str, StyleEntry]:
     -----
     paraPrIDRef / charPrIDRef 가 누락된 스타일은 결과에서 제외한다
     (본문 본 변환에 무관한 char/border 전용 스타일일 수 있음).
+
+    스타일 이름은 적재 시 유니코드 NFC 로 정규화한다. 한글 이름이
+    NFD (자모 분리, 예: macOS 옛 HFS+ 경유) 로 들어와도 룩업이
+    실패하지 않도록 하는 안전망이다 (조합형 1 코드포인트와 자모
+    2~3 코드포인트는 ``==`` 비교에서 다르게 처리되기 때문).
     """
     root = etree.fromstring(header_bytes)
     table: dict[str, StyleEntry] = {}
@@ -81,6 +87,7 @@ def parse_style_table(header_bytes: bytes) -> dict[str, StyleEntry]:
             continue
         if para_pr_id is None or char_pr_id is None:
             continue
+        name = unicodedata.normalize("NFC", name)
         if name in table:
             raise ValueError(
                 f"header.xml 에 같은 이름의 스타일이 중복: {name!r} "

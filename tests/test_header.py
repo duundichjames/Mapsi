@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 
 from mapsi.builder.header import StyleEntry, load_header, parse_style_table
@@ -45,3 +46,29 @@ def test_known_styles_have_expected_attrs(templates_dir: Path) -> None:
         assert table[name].id == sid
         assert table[name].para_pr_id == ppid
         assert table[name].char_pr_id == cpid
+
+
+def test_parse_style_table_normalizes_nfd_to_nfc() -> None:
+    """헤더가 NFD (자모 분리) 한글 이름을 줘도 키는 NFC 로 적재된다.
+
+    macOS 옛 HFS+ 경유나 일부 외부 도구가 NFD 로 정규화한 XML 을
+    돌려줄 수 있다. 룩업 측 (style_name) 도 NFC 로 정규화하므로
+    두 NFC 가 만나 안전히 매치된다.
+    """
+    nfd_xml = (
+        b"<?xml version='1.0' encoding='UTF-8'?>"
+        b"<hh:head xmlns:hh='http://www.hancom.co.kr/hwpml/2011/head'>"
+        + unicodedata.normalize(
+            "NFD",
+            "<hh:style id='99' name='개요 1' "
+            "paraPrIDRef='20' charPrIDRef='12' type='PARA'/>",
+        ).encode("utf-8")
+        + b"</hh:head>"
+    )
+    table = parse_style_table(nfd_xml)
+
+    nfc_key = unicodedata.normalize("NFC", "개요 1")
+    assert nfc_key in table
+    assert table[nfc_key].id == "99"
+    for key in table:
+        assert unicodedata.is_normalized("NFC", key)
