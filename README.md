@@ -33,6 +33,13 @@ Streamlit UI 는 설치 후 다음 명령으로 실행한다.
 streamlit run streamlit_app.py
 ```
 
+UI 는 Markdown *텍스트* 만 받으므로 상대경로로 참조된 그림 원본은 함께
+읽을 수 없다. 이때 변환은 실패하지 않고 번들 placeholder PNG
+(`mapsi/assets/image_not_found.png`) 가 "이미지를 불러올 수 없습니다." 라는
+메시지와 함께 그림 자리에 삽입되며, 누락된 원본 경로 목록이 경고 배너로
+노출된다. CLI 는 엄격한 기존 동작을 유지한다 (`md_to_hwpx(...,
+allow_missing_images=True)` 로 명시적으로 옵트인해야 같은 동작).
+
 `.[dev]` / `.[llm,dev]` 의 대괄호는 `pyproject.toml` 의
 `optional-dependencies.*` 묶음을 가리킨다. zsh 에서는 글로빙 충돌을 막기
 위해 따옴표가 필요하다.
@@ -127,7 +134,7 @@ python -m mapsi.inspect output/*.hwpx
 ### 테스트
 
 ```bash
-pytest                          # 전체 (현재 344개)
+pytest                          # 전체 (현재 352개)
 pytest tests/test_golden.py -v  # 골든 회귀만
 ```
 

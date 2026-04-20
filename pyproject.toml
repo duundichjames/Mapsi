@@ -56,7 +56,7 @@ include = ["mapsi*"]
 exclude = ["tests*", "samples*", "spec*", "templates*", "docs*"]
 
 [tool.setuptools.package-data]
-mapsi = ["py.typed"]
+mapsi = ["py.typed", "assets/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

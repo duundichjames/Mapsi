@@ -70,10 +70,17 @@ def _convert_markdown_to_hwpx(
     input_name: str,
     style_map_path: Path,
     disable_llm: bool,
-) -> tuple[bytes, str]:
+) -> tuple[bytes, str, list[str]]:
+    """Markdown 텍스트를 HWPX 로 변환해 ``(bytes, filename, missing_images)`` 반환.
+
+    UI 는 업로드된 Markdown *텍스트* 만 다루므로, 상대경로로 참조된 그림
+    원본은 tempdir 기준으로 해석되지 않는다. 이런 누락 이미지는
+    ``allow_missing_images=True`` 로 placeholder PNG 로 대체되며 누락 목록은
+    호출자에게 반환되어 경고 배너로 노출된다.
+    """
     if not markdown_text.strip():
         raise ValueError("입력된 Markdown 내용이 비어 있습니다.")
-    
+
     markdown_text = _sanitize_markdown(markdown_text)
 
     if not style_map_path.is_file():
@@ -91,9 +98,9 @@ def _convert_markdown_to_hwpx(
 
         input_path.write_text(markdown_text, encoding="utf-8")
 
-        previous_no_llm = None
         import os
         previous_no_llm = os.environ.get("MAPSI_NO_LLM")
+        missing_images: list[str] = []
         try:
             if disable_llm:
                 os.environ["MAPSI_NO_LLM"] = "1"
@@ -105,6 +112,8 @@ def _convert_markdown_to_hwpx(
                 output_path=output_path,
                 style_map=style_map,
                 work_dir=work_dir,
+                allow_missing_images=True,
+                missing_images_report=missing_images,
             )
         finally:
             if previous_no_llm is None:
@@ -112,7 +121,7 @@ def _convert_markdown_to_hwpx(
             else:
                 os.environ["MAPSI_NO_LLM"] = previous_no_llm
 
-        return output_path.read_bytes(), output_path.name
+        return output_path.read_bytes(), output_path.name, missing_images
 
 
 style_map_path, disable_llm = _render_sidebar()
@@ -172,17 +181,30 @@ if convert_clicked:
     else:
         with st.spinner("HWPX 파일을 생성하는 중입니다..."):
             try:
-                hwpx_bytes, hwpx_filename = _convert_markdown_to_hwpx(
-                    markdown_text=uploaded_markdown_text,
-                    input_name=uploaded_markdown_name,
-                    style_map_path=style_map_path,
-                    disable_llm=disable_llm,
+                hwpx_bytes, hwpx_filename, missing_images = (
+                    _convert_markdown_to_hwpx(
+                        markdown_text=uploaded_markdown_text,
+                        input_name=uploaded_markdown_name,
+                        style_map_path=style_map_path,
+                        disable_llm=disable_llm,
+                    )
                 )
             except Exception as exc:
                 st.error("변환 중 오류가 발생했습니다.")
                 st.exception(exc)
             else:
                 st.success("변환이 완료되었습니다.")
+                if missing_images:
+                    st.warning(
+                        f"다음 이미지 {len(missing_images)}개를 찾지 못해 "
+                        "대체 이미지('이미지를 불러올 수 없습니다.')로 "
+                        "표시했습니다. UI 업로드 경로에서는 Markdown 이 "
+                        "참조하는 원본 이미지 파일을 함께 읽을 수 없어 "
+                        "발생하는 정상 동작입니다."
+                    )
+                    with st.expander("누락된 이미지 경로 보기"):
+                        for src in missing_images:
+                            st.code(src, language="text")
                 st.download_button(
                     label="HWPX 다운로드",
                     data=hwpx_bytes,
