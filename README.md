@@ -2,170 +2,108 @@
 
 Markdown Adapter for Paragraph-Style Injection
 
-마크다운 문서를 한/글 HWPX 로 변환하면서 각 단락에 적절한 hwpx 스타일을
-자동으로 부여하는 변환기이다. "맵시" 는 "모양새, 차림새" 를 뜻하는 한국어이며,
-본 프로젝트는 마크다운의 구조를 hwpx 의 스타일로 맵시 있게 옮기는 도구이다.
+## 앱의 목적과 의미
+
+Mapsi 는 마크다운 문서를 한/글 hwpx 로 변환하는 도구이다. "맵시" 는 "모양새, 차림새" 를 뜻하는 한국어이며, 본 프로젝트는 마크다운의 구조를 hwpx 의 스타일로 맵시 있게 옮기는 도구이다.
+
+연구자와 개발자가 보편적으로 사용하는 마크다운 형식을 학술지와 공공기관 및 정부 문서 작성에서 필수적으로 요구되는 hwpx 형식으로 변환하는 것이 핵심 목적이다. 두 형식 사이의 차이를 줄여, 한번 작성한 문서를 두 환경에서 모두 활용할 수 있도록 한다.
+
+변환의 핵심 원리는 마크다운의 포맷 요소와 hwpx 의 스타일 이름을 1:1 로 매칭시키는 것이다. 마크다운의 제목은 개요 1-6 스타일로, 글머리 목록은 네모/동그라미/줄 스타일로, 번호 목록은 번호 1-3 스타일로 매핑된다. 인용은 인용 스타일, 코드 블록은 코드 스타일, 표는 표내용/표캡션 스타일, 그림은 그림/그림캡션 스타일에 대응된다.
+
+본 변환기는 시각 속성(폰트, 색, 들여쓰기 등)을 스스로 결정하지 않는다. 변환기의 책임은 마크다운의 모든 구조 단위에 올바른 hwpx 스타일 이름을 부착하는 데까지이며, 시각 속성의 최종 조정은 사용자가 hwpx 스타일 편집창에서 수행한다. 사용자는 이 분담 덕분에 최초에 작성한 마크다운 파일을 부담없이 hwpx 파일로 변환할 수 있고, 한/글의 뛰어난 스타일 기능을 이용하여 hwpx 스타일 수정을 통해 문서 전체에 일관된 서식을 적용할 수 있다. 
+
+즉 Mapsi 는 마크다운으로 hwpx 의 최소한의 골격을 만들고, 보다 자세한 맞춤화(customization)는 hwpx 자체의 스타일 편집을 통해 구현하도록 하는 설계를 따른다.
+
+## 지원 요소
+
+Mapsi 는 마크다운의 다음 요소를 대응하는 hwpx 스타일로 매핑한다.
+
+| 마크다운 요소 | hwpx 스타일 |
+|--------------|-------------|
+| `#` - `######` 제목 | 개요 1 - 개요 6 |
+| `-` 또는 `*` 글머리 목록 (깊이 1-3) | 네모, 동그라미, 줄 |
+| `1.` 번호 목록 (깊이 1-3) | 번호 1, 번호 2, 번호 3 |
+| `>` 인용 블록 | 인용 |
+| 코드 블록 | 코드 |
+| GFM 파이프 표 | 표내용, 표캡션 |
+| 이미지 참조 | 그림, 그림캡션 |
+| 각주 `[^N]` | 각주 (자동 번호매김) |
+| 참고문헌 섹션 | 참고문헌 |
+| 인라인 서식 | 굵게, 기울임, 취소선, 코드, 하이퍼링크 |
+| 수식 `$...$` / `$$...$$` | hp:equation (v0.2) |
+
+쪽번호, 용지, 여백, 기본 글꼴 같은 문서 전역 설정은 base 템플릿에서 상속된다.
+
+## 개발 연혁
+
+| 날짜 | 버전 | 내용 |
+|------|------|------|
+| 2026-04-18 | 0.1 | 앱 프로젝트 기획안 작성 |
+| 2026-04-21 | 0.2 | 앱 프로토타입 완성 |
 
 ## 설치
 
-목적에 따라 둘 중 하나를 선택한다.
+목적에 따라 다음 중 하나를 선택한다.
 
 ```bash
-# 변환기만 사용 (런타임 의존성: markdown-it-py, mdit-py-plugins, lxml, pyyaml, Pillow)
+# 변환기만 사용
 pip install -e .
 
-# + 수식 LLM 변환 (anthropic, openai, python-dotenv 추가 설치)
+# 수식 LLM 변환 포함
 pip install -e ".[llm]"
 
-# 개발 / 테스트까지 (위 + pytest, pytest-cov 추가 설치)
+# 개발 및 테스트 환경
 pip install -e ".[dev]"
 
-# LLM + 개발 모두
+# LLM 과 개발 환경 모두
 pip install -e ".[llm,dev]"
-
-# + Streamlit UI (브라우저에서 변환, streamlit 추가 설치)
-pip install -e ".[ui]"
 ```
 
-Streamlit UI 는 설치 후 다음 명령으로 실행한다.
+## 사용법
 
-```bash
-streamlit run streamlit_app.py
-```
+추후 제공 예정.
 
-UI 는 Markdown *텍스트* 만 받으므로 상대경로로 참조된 그림 원본은 함께
-읽을 수 없다. 이때 변환은 실패하지 않고 번들 placeholder PNG
-(`mapsi/assets/image_not_found.png`) 가 "이미지를 불러올 수 없습니다." 라는
-메시지와 함께 그림 자리에 삽입되며, 누락된 원본 경로 목록이 경고 배너로
-노출된다. CLI 는 엄격한 기존 동작을 유지한다 (`md_to_hwpx(...,
-allow_missing_images=True)` 로 명시적으로 옵트인해야 같은 동작).
+## 향후 계획
 
-`.[dev]` / `.[llm,dev]` 의 대괄호는 `pyproject.toml` 의
-`optional-dependencies.*` 묶음을 가리킨다. zsh 에서는 글로빙 충돌을 막기
-위해 따옴표가 필요하다.
+| 예정일 | 내용 |
+|--------|------|
+| 2026-04-24 | 수식 편집기 및 BibTeX 연동 완성 |
 
-### 수식 변환 (선택)
+### 수식 편집기 연동
 
-`.md` 안의 `$ ... $` (인라인) / `$$ ... $$` (디스플레이) LaTeX 수식은
-본문에 `[hnc 수식]<HNC 스크립트>[/hnc 수식]` 평문 마커로 박힌다 (자세한
-배경은 [ADR 0002](docs/decisions/0002-equation-marker-mode.md)).
+현재 v0.1 의 수식 처리는 `[hnc 수식]...[/hnc 수식]` 평문 마커를 본문에 박는 방식이다. v0.2 에서는 hp:equation XML 요소를 직접 생성하여, 한/글이 파일을 열 때 즉시 렌더링된 수식이 표시되도록 한다. 사용자의 수동 복사 붙여넣기가 불필요해진다.
 
-마커 안 본문은 LLM 키 유무에 따라 결정된다:
+### BibTeX 연동
 
-| 환경 | 마커 안 본문 | 사용자 동작 |
-|---|---|---|
-| `MAPSI_NO_LLM=1` 또는 키 없음 | LaTeX 원문 | 한/글 수식 편집기에서 LaTeX 보고 직접 입력 |
-| `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` 설정 | HNC 수식 문법 | 마커 안 텍스트 복사 → 한/글 수식 편집기에 붙여넣기 → 즉시 렌더링 |
+학술 문서 작성 시 자주 사용되는 BibTeX 서지 파일을 마크다운 본문의 `[@citekey]` 참조와 연결하여, 참고문헌 섹션을 자동 생성하는 기능을 추가한다. Pandoc 의 citation 처리와 유사한 경험을 제공하되 결과는 한/글 참고문헌 스타일로 출력된다.
 
-키는 셸 환경 변수에 직접 두거나, 프로젝트 루트의 `.env` 에 적어 두면
-CLI 가 `python-dotenv` 로 자동 로드한다 (`mapsi[llm]` 설치 시):
+### 장기 로드맵
 
-```dotenv
-# .env
-ANTHROPIC_API_KEY=sk-ant-...
-# OPENAI_API_KEY=sk-...    # 둘 다 있으면 Anthropic 우선
-```
+향후 다음 기능들을 단계적으로 추가할 계획이다.
 
-CLI 옵션으로 일회성으로 LLM 을 끌 수도 있다:
-
-```bash
-mapsi input.md -o out.hwpx --no-llm
-```
-
-## 사용
-
-### 변환
-
-```bash
-mapsi input.md -o output.hwpx
-# 또는
-python -m mapsi input.md -o output.hwpx
-
-
-# LLM 끄기 (수식을 LaTeX 원문 그대로)
-mapsi input.md -o output.hwpx --no-llm
-
-# 무슨 일이 일어나는지 자세히 보기
-mapsi input.md -o output.hwpx --verbose
-```
-
-### 검증 — 변환 결과가 의도대로인지 확인
-
-한/글(정품) 없이 셸에서 변환 결과를 1초에 점검하는 도구가 함께 제공된다.
-한글 뷰어(무료) 는 스타일 표시줄이 없어 시각 검증이 어렵기 때문에,
-**구조적 정확성** 은 본 도구로 확인하고 시각 스타일은 정품 한/글에서
-열어 조정하는 워크플로를 권장한다.
-
-```bash
-# 단락별 (스타일 이름, 텍스트) 시퀀스 출력
-python -m mapsi.inspect output.hwpx
-
-# 사용된 스타일 정의 요약 + 정합성 점검까지
-python -m mapsi.inspect output.hwpx --styles
-
-# 여러 파일을 한 번에
-python -m mapsi.inspect output/*.hwpx
-```
-
-출력 예시:
-
-```
-=== output/04_blockquote_code.hwpx ===
-    1. [ 본문 ] id=3   아래는 인용문 예시입니다.
-    2. [ 인용 ] id=8   진실은 단순함이라는 옷을 입고 나타난다.
-    3. [ 인용 ] id=8   — 익명
-    4. [ 본문 ] id=3   이어서 코드 예시를 보입니다.
-    5. [ 코드 ] id=9   def greet(name):
-    6. [ 코드 ] id=9       print(f"Hello, {name}!")
-    7. [ 코드 ] id=9   greet("Mapsi")
-    8. [ 본문 ] id=3   마무리 평문 단락입니다.
-
-[사용된 스타일 정의]
-  styleIDRef=0    바탕글
-  styleIDRef=3    본문
-  styleIDRef=8    인용
-  styleIDRef=9    코드
-
-[정합성]
-  OK 모든 styleIDRef 가 header.xml 에 정의되어 있다
-  ㆍ 본문에 등장한 스타일 4 종 / header.xml 의 스타일 정의 37 종
-```
-
-### 테스트
-
-```bash
-pytest                          # 전체 (현재 362개)
-pytest tests/test_golden.py -v  # 골든 회귀만
-```
-
-세션 시작 시 `tests/conftest.py` 가 `MAPSI_NO_LLM=1` 을 강제 설정해, 키가
-있어도 회귀는 항상 폴백 (LaTeX 원문) 경로를 탄다. 캐시 경로도 임시
-디렉토리로 격리해 사용자의 `~/.mapsi/equation_cache.json` 을 오염시키지
-않는다.
+사용자 정의 스타일 매핑 YAML 지원, 설명 목록(definition list) 지원, 표 셀 내부의 인라인 서식 지원, 각주와 수식과 인라인 서식의 동시 등장 처리, 역변환(hwpx → 마크다운) 등이다.
 
 ## 디자인 철학
 
-마크다운의 **구조적 역할** 을 한/글 **스타일 이름** 에 매핑한다.
-시각 속성(폰트·색·들여쓰기) 은 결정하지 않는다 — 그건 사용자가 한/글의
-스타일 편집기에서 일괄 조정하면 된다.
+마크다운의 구조적 역할을 한/글 스타일 이름에 매핑한다. 시각 속성(폰트, 색, 들여쓰기)은 결정하지 않으며, 사용자가 한/글의 스타일 편집기에서 일괄 조정하면 된다.
 
-진실원 분리:
+정책과 사실을 분리한다. Mapsi 는 "어떤 마크다운 요소를 어떤 한/글 스타일 이름에 매핑할 것인가" 라는 정책만 관리하며, 한/글 스타일의 내부 구조는 한/글이 제공한 그대로 사용한다. 덕분에 한/글의 버전 변경이나 Mapsi 의 정책 변경이 서로 독립적으로 반영된다. 
 
-- `spec/styles.yaml` — 정책 (역할 → 한/글 스타일 이름)
-- `templates/Contents/header.xml` — 한/글이 정의한 스타일 사실
-  (이름 → id, paraPrIDRef, charPrIDRef)
+## 기여
 
-빌더는 둘을 이름으로 조인해 본문 XML 에 ID 를 박는다.
+버그 제보와 개선 제안은 GitHub Issues 에 부탁 드린다. 코드 기여 전에는 docs/ 아래의 개발자 문서를 참조하기 바란다.
 
 ## 라이선스
 
-MIT License
-자세한 프로젝트 계획은 docs/project_plan.md 를 참조한다.
+본 프로젝트는 MIT License 하에 배포된다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하기 바란다. 기여자 명단은 [CONTRIBUTORS.md](CONTRIBUTORS.md) 를 참조한다.
 
 ## 개발자 문서
 
+본 프로젝트의 설계 상세와 개발자 온보딩 자료는 다음 문서들에서 확인할 수 있다.
+
 - [프로젝트 전체 계획](docs/project_plan.md)
-- [개발자 핸드오프 문서](docs/developer_handoff.md) — B 가 무엇을 어떻게 하는지
-- [Team C 핸드오프 문서](docs/c_handoff.md) — C 영역 (이미지/매니페스트/패키지)
-- [API 인터페이스 명세](spec/interfaces.md) — B ↔ C 계약
+- [개발자 B 핸드오프](docs/developer_handoff.md) — 코어 엔진 담당
+- [개발자 C 핸드오프](docs/c_handoff.md) — 주변 인프라 담당
+- [API 인터페이스 계약](spec/interfaces.md) — 모듈 경계
 - [골든 회귀 테스트 가이드](tests/golden/README.md)
+- [아키텍처 결정 기록](docs/decisions/) — ADR 모음
