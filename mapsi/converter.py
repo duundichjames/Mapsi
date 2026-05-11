@@ -47,11 +47,12 @@ def md_to_hwpx(
         UI 가 사용자에게 경고 배너를 띄울 때 사용한다 (동일 src 는 한 번만).
     """
     from .ast_walker import walk
+    from .bibliography import load_bibliography
     from .builder.header import parse_style_table
     from .builder.manifest import update_manifest
     from .builder.section import build_section
     from .packager import package_hwpx
-    from .parser import parse_markdown
+    from .parser import parse_markdown, read_front_matter, read_inline_bibtex
 
     md_path = Path(md_path)
     output_path = Path(output_path)
@@ -64,8 +65,17 @@ def md_to_hwpx(
 
     _bootstrap_workdir(work_dir)
 
+    # BibTeX 데이터 수집 (bibliography 없으면 None 으로 패스스루)
+    bib_data: dict | None = None
+    front_matter = read_front_matter(md_path)
+    bib_file_key = front_matter.get("bibliography")
+    inline_bibtex = read_inline_bibtex(md_path)
+    if bib_file_key or inline_bibtex:
+        bib_files = [md_path.parent / bib_file_key] if bib_file_key else []
+        bib_data = load_bibliography(bib_files, inline_bibtex)
+
     blocks = parse_markdown(md_path)
-    walked = walk(blocks)
+    walked = walk(blocks, bib_data=bib_data)
 
     image_map, manifest_entries = _register_figure_images(
         walked,

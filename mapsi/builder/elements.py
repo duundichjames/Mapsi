@@ -170,10 +170,11 @@ def build_paragraph(
     foot_marks = meta.get("footnote_marks")
     eq_marks = meta.get("equation_marks")
     inline_marks = meta.get("inline_marks")
-    if sum(bool(x) for x in (foot_marks, eq_marks, inline_marks)) > 1:
+    cite_marks = meta.get("citation_marks")
+    if sum(bool(x) for x in (foot_marks, eq_marks, inline_marks, cite_marks)) > 1:
         raise NotImplementedError(
-            "한 단락에 각주/수식/인라인 서식이 둘 이상 동시에 있는 경우는 "
-            "v0.1 에서 지원하지 않는다 (ADR 0004 영향 절 참조; 통합은 v0.2)"
+            "한 단락에 각주/수식/인라인 서식/인용이 둘 이상 동시에 있는 경우는 "
+            "v0.2 에서 지원하지 않는다 (ADR 0004 영향 절 참조; 통합은 v0.3)"
         )
     if foot_marks:
         p.append(
@@ -190,6 +191,10 @@ def build_paragraph(
             block.text, inline_marks, entry.char_pr_id
         ):
             p.append(run)
+    elif cite_marks:
+        p.append(
+            _make_run_with_citations(block.text, cite_marks, entry.char_pr_id)
+        )
     else:
         p.append(_make_text_run(block.text, entry.char_pr_id))
     return p
@@ -424,6 +429,40 @@ def _make_hyperlink_runs(label: str, url: str) -> list[etree._Element]:
     )
     etree.SubElement(end_run, f"{_HP}t")
     return [begin_run, text_run, end_run]
+
+
+def _make_run_with_citations(
+    text: str,
+    marks: list[dict[str, Any]],
+    char_pr_id: str,
+) -> etree._Element:
+    """인용 마크가 있는 단락을 ``hp:run`` 1 개로 emit 한다.
+
+    인용은 HWPX 구조 요소 없이 순수 텍스트로 삽입된다. walker 가 채운
+    ``mark["formatted"]`` 를 ``offset`` 위치에 끼워 평문과 교대로 emit.
+
+    ``formatted`` 키가 없는 마크 (resolve 전 또는 unknown key) 는 원본
+    ``raw`` 를 대괄호로 감싸 ``[@raw]`` 형태로 표시한다.
+
+    각주/수식과 달리 빈 ``hp:t`` 도 emit 하지 않는다 (기존 패턴 동일).
+    """
+    run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": char_pr_id})
+    sorted_marks = sorted(marks, key=lambda m: m.get("offset", 0))
+    cursor = 0
+    for mark in sorted_marks:
+        offset = int(mark.get("offset", cursor))
+        offset = max(cursor, min(offset, len(text)))
+        if offset > cursor:
+            t = etree.SubElement(run, f"{_HP}t")
+            t.text = text[cursor:offset]
+        formatted = mark.get("formatted") or f'[@{mark.get("raw", "")}]'
+        t_cite = etree.SubElement(run, f"{_HP}t")
+        t_cite.text = formatted
+        cursor = offset
+    if cursor < len(text):
+        t = etree.SubElement(run, f"{_HP}t")
+        t.text = text[cursor:]
+    return run
 
 
 def _make_run_with_equations(
