@@ -38,14 +38,33 @@
       빈 각주를 emit 하도록 한다 (마크다운 작성 실수 방어).
     - 본 규칙은 표/그림 캡션 승격과 독립 — 어떤 순서로 적용해도 결과는
       동일하므로 마지막에 한 번 수행한다.
+
+규칙 5) 인용 마크 해결 (BibTeX, 선택적)
+    - ``bib_data`` 인자가 제공된 경우에만 동작한다.
+    - 모든 Block 의 ``meta["citation_marks"]`` 를 순회하며 ``BibFormatter``
+      로 각 마크에 ``"formatted"`` 문자열을 채운다.
+    - 첫 등장/재등장 판정을 통해 복수 저자 축약 ("et al.", "외") 를 처리.
+
+규칙 6) 참고문헌 목록 삽입 (BibTeX, 선택적)
+    - 인용 마크가 하나라도 해결된 경우, 인용된 키 목록으로 참고문헌 항목을
+      생성해 문서에 삽입한다.
+    - 삽입 위치: ``_INJECT_HEADING_LOWER`` (= "references", "bibliography",
+      "참고문헌") 과 대소문자 무관 매치되는 깊이 1 헤딩이 존재하면 그 직후.
+      없으면 "참고문헌" 헤딩을 생성해 문서 맨 끝에 추가.
+    - 삽입 Block 은 ``role="reference"`` 이므로 규칙 3 (demote) 이 건드리지
+      않는다.
 """
 
 from __future__ import annotations
 
 import re
 from copy import deepcopy
+from typing import TYPE_CHECKING, Any
 
 from .parser import Block
+
+if TYPE_CHECKING:
+    from .bibliography.formatter import BibFormatter
 
 
 __all__ = [
@@ -59,6 +78,8 @@ __all__ = [
 REFERENCE_HEADING_TEXTS = frozenset(
     {"참고문헌", "참고 문헌", "References", "REFERENCES"}
 )
+
+_INJECT_HEADING_LOWER = frozenset({"references", "bibliography", "참고문헌"})
 """참고문헌 섹션을 시작시키는 깊이 1 헤딩의 허용 텍스트 4 종.
 
 A 의 ``samples/incremental/08_references/08_references.md`` front matter 에서
@@ -87,23 +108,40 @@ FIGURE_CAPTION_PATTERN = re.compile(r"^(그림|Figure)\s+\d+\.\s*")
 """
 
 
-def walk(blocks: list[Block]) -> list[Block]:
+def walk(
+    blocks: list[Block],
+    *,
+    bib_data: dict[str, Any] | None = None,
+) -> list[Block]:
     """Block 트리를 순회하며 문맥 의존 규칙을 적용한 새 리스트를 반환한다.
 
     원본 ``blocks`` 는 변형하지 않고 순수 함수로 동작한다.
+
+    Parameters
+    ----------
+    blocks:
+        ``parse_markdown`` 의 출력.
+    bib_data:
+        ``bibliography.load_bibliography`` 의 반환값.
+        ``None`` 이면 인용 관련 규칙(5·6) 을 건너뛴다.
 
     적용 순서:
         1) 표 캡션 승격 (직전 단락 → 표 ``meta["caption"]``)
         2) 그림 캡션 승격 (직후 단락 → 그림 ``meta["caption"]``)
         3) 각주 본문 흡수 (footnote_def → paragraph mark["text"])
-        4) 참고문헌 섹션 demote (paragraph/list → reference)
-
-    각 규칙은 서로 다른 Block 역할을 다루므로 순서 상관없이 동일한 결과를
-    산출한다. 현 구현은 표 → 그림 → 각주 → 참고문헌 순.
+        4) 인용 마크 해결 (bib_data 있을 때만; citation_marks → formatted)
+        5) 참고문헌 목록 삽입 (bib_data 있을 때만)
+        6) 참고문헌 섹션 demote (paragraph/list → reference)
     """
     out = _promote_table_captions(blocks)
     out = _promote_figure_captions(out)
     out = _absorb_footnote_defs(out)
+    if bib_data is not None:
+        from .bibliography.formatter import BibFormatter
+
+        formatter = BibFormatter(bib_data)
+        out = _resolve_citations(out, formatter)
+        out = _inject_reference_list(out, formatter)
     out = _demote_in_reference_section(out)
     return out
 
@@ -285,3 +323,76 @@ def _try_promote_previous(out: list[Block]) -> str | None:
         return None
     out.pop()
     return caption
+
+
+# ---------------------------------------------------------------------------
+# 규칙 5·6 — BibTeX 인용 해결 및 참고문헌 목록 삽입
+# ---------------------------------------------------------------------------
+
+_CITE_BEARING_ROLES = frozenset(
+    {"paragraph", "blockquote", "bullet_list", "ordered_list", "heading"}
+)
+
+
+def _resolve_citations(
+    blocks: list[Block], formatter: "BibFormatter"
+) -> list[Block]:
+    """규칙 5 — citation_marks 에 ``"formatted"`` 텍스트를 채운다.
+
+    ``meta["citation_marks"]`` 가 있는 모든 Block 을 deepcopy 한 뒤
+    각 마크에 ``formatter.format_citation`` 결과를 ``"formatted"`` 키로
+    추가한다. citation_marks 가 없는 Block 은 원본 참조를 유지한다.
+    """
+    out: list[Block] = []
+    for blk in blocks:
+        marks = blk.meta.get("citation_marks") if blk.meta else None
+        if not marks:
+            out.append(blk)
+            continue
+        new_blk = deepcopy(blk)
+        for mark in new_blk.meta["citation_marks"]:
+            mark["formatted"] = formatter.format_citation(
+                mark.get("cite_type", "bracketed"),
+                mark.get("raw", ""),
+            )
+        out.append(new_blk)
+    return out
+
+
+def _inject_reference_list(
+    blocks: list[Block], formatter: "BibFormatter"
+) -> list[Block]:
+    """규칙 6 — 인용된 키의 참고문헌 항목을 문서에 삽입한다.
+
+    삽입하지 않는 경우:
+        - ``formatter.cited_keys()`` 가 비어 있을 때 (인용 없음).
+
+    삽입 위치:
+        - ``_INJECT_HEADING_LOWER`` 에 속하는 깊이 1 헤딩이 존재하면
+          그 헤딩 직후.
+        - 존재하지 않으면 "참고문헌" 깊이 1 헤딩을 생성해 문서 끝에 추가.
+
+    삽입 Block 의 role 은 ``"reference"`` 이므로
+    ``_demote_in_reference_section`` 이 재처리하지 않는다.
+    """
+    cited = formatter.cited_keys()
+    if not cited:
+        return blocks
+
+    ref_entries = formatter.format_reference_list()
+    ref_blocks = [Block(role="reference", depth=0, text=entry) for entry in ref_entries]
+
+    # 삽입 위치 탐색 (대소문자 무관 매치)
+    inject_after: int | None = None
+    for i, blk in enumerate(blocks):
+        if blk.role == "heading" and blk.depth == 1:
+            if blk.text.strip().lower() in _INJECT_HEADING_LOWER:
+                inject_after = i
+                break
+
+    if inject_after is not None:
+        return blocks[: inject_after + 1] + ref_blocks + blocks[inject_after + 1 :]
+
+    # 헤딩 없음 → 생성해서 끝에 추가
+    heading_block = Block(role="heading", depth=1, text="참고문헌")
+    return list(blocks) + [heading_block] + ref_blocks
