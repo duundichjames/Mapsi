@@ -182,13 +182,21 @@ class Group(Node):
 
 @dataclass
 class Command(Node):
-    """명령어와 그 인자들. ``\\frac{a}{b}`` → ``Command('frac', [..,..])``."""
+    """명령어와 그 인자들. ``\\frac{a}{b}`` → ``Command('frac', [..,..])``.
+
+    ``opt`` 은 ``\\sqrt[n]{x}`` 처럼 대괄호로 받는 선택 인자(있으면 그 하위
+    트리, 없으면 ``None``).
+    """
 
     name: str
     args: list[Node] = field(default_factory=list)
+    opt: Node | None = None
 
     def pretty(self, indent: int = 0) -> str:
         lines = [f"{_ind(indent)}Command \\{self.name}"]
+        if self.opt is not None:
+            lines.append(f"{_ind(indent + 1)}opt:")
+            lines.append(self.opt.pretty(indent + 2))
         for k, arg in enumerate(self.args):
             lines.append(f"{_ind(indent + 1)}arg[{k}]:")
             lines.append(arg.pretty(indent + 2))
@@ -281,7 +289,13 @@ _COMMAND_ARITY: dict[str, int] = {
     "text": 1,
     "mathbf": 1,
     "mathrm": 1,
+    "dot": 1,
+    "boldsymbol": 1,
+    "underbrace": 1,
 }
+
+# 대괄호 선택 인자 ``[...]`` 를 받을 수 있는 명령어 (예: ``\sqrt[n]{x}``).
+_COMMAND_OPTIONAL_ARG = {"sqrt"}
 
 # 방향 A 로 행/열 분해를 지원하는 환경 이름 (별표 변형은 별표를 떼고 대조).
 _MATRIX_ENVS = {
@@ -398,9 +412,12 @@ class _Parser:
             if tok.value == "end":
                 # \begin 짝 없이 등장한 \end → 폴백 (요구 5)
                 raise LatexParseError("짝 맞는 \\begin 없는 \\end")
+            opt = None
+            if tok.value in _COMMAND_OPTIONAL_ARG:
+                opt = self._maybe_optional_arg()
             arity = _COMMAND_ARITY.get(tok.value, 0)
             args = [self._parse_argument(f"\\{tok.value}") for _ in range(arity)]
-            return Command(tok.value, args)
+            return Command(tok.value, args, opt=opt)
         if tok.kind in (TokenKind.SUP, TokenKind.SUB):
             raise LatexParseError("첨자 기호 앞에 기준 원자가 없음")
         raise LatexParseError(f"예상치 못한 토큰: {tok.value!r}")
@@ -413,6 +430,28 @@ class _Parser:
         if tok.kind in (TokenKind.LBRACE, TokenKind.CHAR, TokenKind.COMMAND):
             return self._parse_atom()
         raise LatexParseError(f"{who} 의 인자로 부적절한 토큰: {tok.value!r}")
+
+    def _maybe_optional_arg(self) -> Node | None:
+        r"""대괄호 선택 인자 ``[...]`` 를 읽는다. 없으면 ``None``.
+
+        ``[`` ``]`` 는 토크나이저상 일반 ``CHAR`` 이므로 값으로 판별한다.
+        ``\sqrt`` 등 선택 인자를 받는 명령어 직후에만 호출된다.
+        """
+        tok = self._peek()
+        if tok is None or not (tok.kind == TokenKind.CHAR and tok.value == "["):
+            return None
+        self._advance()  # [
+        children: list[Node] = []
+        while True:
+            t = self._peek()
+            if t is None:
+                raise LatexParseError("선택 인자 '[...]' 가 닫히지 않음")
+            if t.kind == TokenKind.CHAR and t.value == "]":
+                self._advance()
+                break
+            atom = self._parse_atom()
+            children.append(self._maybe_scripts(atom))
+        return Group(children)
 
     # -- 환경 처리 (방향 A) --------------------------------------------------
 
