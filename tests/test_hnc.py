@@ -264,3 +264,20 @@ class TestSampleLikeness:
         out = _hnc(r"\frac{1}{3}\sum_{i=1}^{3}")
         assert "_{i=1} ^{3}" in out
         assert "{1} over {3}" in out
+
+
+class TestFunctions:
+    def test_common_functions_map_to_same_token(self) -> None:
+        for fn in ["sin", "cos", "tan", "log", "ln", "exp", "min", "max", "lim"]:
+            assert _hnc("\\" + fn) == fn
+
+    def test_arc_functions_output_name_as_is(self) -> None:
+        assert _hnc(r"\arcsin") == "arcsin"
+        assert _hnc(r"\arctan") == "arctan"
+
+    def test_lim_frac_sin_no_fallback(self) -> None:
+        # 함수명 보완 후 폴백 없이 변환되어야 한다
+        res = hnc.to_hnc(r"\lim_{x \to 0} \frac{\sin x}{x}")
+        assert res.ok is True
+        assert res.unsupported == []
+        assert res.hnc == "lim_{x rarrow 0} {sin x} over {x}"

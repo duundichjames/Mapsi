@@ -147,6 +147,32 @@ _SPECIALS = {
     "vert": "vert",
 }
 
+#: 수학 함수명 (인자 0). HNC 에서도 대개 같은 토큰을 쓴다. ``\arcsin`` 등은
+#: HNC 에 단일 토큰이 없으므로 함수명을 그대로 출력한다.
+_FUNCTIONS = {
+    "sin": "sin",
+    "cos": "cos",
+    "tan": "tan",
+    "cot": "cot",
+    "sec": "sec",
+    "csc": "csc",
+    "arcsin": "arcsin",
+    "arccos": "arccos",
+    "arctan": "arctan",
+    "sinh": "sinh",
+    "cosh": "cosh",
+    "tanh": "tanh",
+    "log": "log",
+    "ln": "ln",
+    "exp": "exp",
+    "min": "min",
+    "max": "max",
+    "lim": "lim",
+    "gcd": "gcd",
+    "deg": "deg",
+    "dim": "dim",
+}
+
 #: 인자 0 명령어 통합 테이블 (위 분류들을 합친 것).
 _SYMBOLS: dict[str, str] = {
     **_BIG_OPERATORS,
@@ -155,6 +181,7 @@ _SYMBOLS: dict[str, str] = {
     **_RELATIONS,
     **_ARROWS,
     **_SPECIALS,
+    **_FUNCTIONS,
 }
 
 # -- 인자 1 이상: 구조를 동반하는 명령어 ------------------------------------
