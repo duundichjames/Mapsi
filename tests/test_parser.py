@@ -872,3 +872,49 @@ class TestBlockquoteInlineMarks:
         assert blk.role == "blockquote"
         assert blk.text == "그냥 평문 인용"
         assert blk.meta == {} or blk.meta is None
+
+
+class TestAmsmathEnvironments:
+    """``\\begin{...}...\\end{...}`` AMS 환경의 amsmath 토큰 처리."""
+
+    @staticmethod
+    def _eq_marks(blocks: list[Block]) -> list[dict]:
+        marks: list[dict] = []
+        for b in blocks:
+            if b.meta and b.meta.get("equation_marks"):
+                marks.extend(b.meta["equation_marks"])
+        return marks
+
+    def test_equation_wrapper_stripped_inner_only(self, tmp_path: Path) -> None:
+        # equation 래퍼는 벗기고 내부 수식만 디스플레이로 발급
+        md = _write(tmp_path, r"\begin{equation} x^2 = y \end{equation}" + "\n")
+        blocks = parse_markdown(md)
+        marks = self._eq_marks(blocks)
+        assert len(marks) == 1
+        assert marks[0]["display"] is True
+        assert marks[0]["latex"] == "x^2 = y"  # 래퍼 제거, 내부만
+        # 디스플레이 단락 형태 (text="")
+        eq_block = next(b for b in blocks if b.meta and b.meta.get("equation_marks"))
+        assert eq_block.role == "paragraph"
+        assert eq_block.text == ""
+
+    def test_equation_star_also_stripped(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, r"\begin{equation*} a + b \end{equation*}" + "\n")
+        marks = self._eq_marks(parse_markdown(md))
+        assert len(marks) == 1
+        assert marks[0]["latex"] == "a + b"
+
+    def test_align_wrapper_kept_for_structure(self, tmp_path: Path) -> None:
+        # align 은 구조적 환경 → 래퍼째 넘겨 latex_parser 가 처리하도록
+        md = _write(tmp_path, "\\begin{align} a &= b \\\\ c &= d \\end{align}\n")
+        marks = self._eq_marks(parse_markdown(md))
+        assert len(marks) == 1
+        assert marks[0]["display"] is True
+        assert marks[0]["latex"].startswith("\\begin{align}")
+        assert marks[0]["latex"].endswith("\\end{align}")
+
+    def test_code_fence_begin_not_captured(self, tmp_path: Path) -> None:
+        # 코드 펜스 안의 \begin{equation} 은 수식으로 잡히지 않는다
+        md = _write(tmp_path, "```\n\\begin{equation} x \\end{equation}\n```\n")
+        blocks = parse_markdown(md)
+        assert self._eq_marks(blocks) == []
