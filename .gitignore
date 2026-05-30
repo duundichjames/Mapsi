@@ -40,3 +40,6 @@ uploads/
 
 # 저장소 ruleset 백업/임시 파일 (설정 정보 포함 — 커밋 금지)
 ruleset_*.json
+
+# 통합 검증 산출물 hwpx (난수 id 로 변환마다 내용이 바뀜 — md 만 추적)
+samples/equation_integration/*.hwpx
