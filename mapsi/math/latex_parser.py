@@ -48,6 +48,7 @@ __all__ = [
     "Script",
     "Align",
     "RowSep",
+    "Environment",
     "ParseResult",
     "LatexParseError",
     "tokenize",
@@ -225,10 +226,38 @@ class Align(Node):
 
 @dataclass
 class RowSep(Node):
-    r"""행 구분 ``\\``."""
+    r"""행 구분 ``\\`` (환경 밖에서 만난 경우의 평탄 마커)."""
 
     def pretty(self, indent: int = 0) -> str:
         return f"{_ind(indent)}RowSep '\\\\'"
+
+
+@dataclass
+class Environment(Node):
+    r"""``\begin{name}...\end{name}`` 환경 노드 (방향 A).
+
+    본문은 **행 → 칸(셀)** 의 2 차원 구조로 분해된다: ``\\`` 로 행을,
+    ``&`` 로 칸을 나누며, 각 칸(:class:`Group`) 의 내용은 다시 파싱된 하위
+    트리다. ``array`` 의 열 정렬 지정자(``{ccc}`` 등) 는 본문 셀과 섞지 않고
+    :attr:`col_spec` 에 원문 문자열로 보관한다. 별표 변형(``align*`` 등) 은
+    별표를 떼어 :attr:`name` 에 기본 이름으로 담는다.
+    """
+
+    name: str
+    rows: list[list["Group"]] = field(default_factory=list)
+    col_spec: str | None = None
+
+    def pretty(self, indent: int = 0) -> str:
+        head = f"{_ind(indent)}Environment {self.name!r}"
+        if self.col_spec is not None:
+            head += f" col_spec={self.col_spec!r}"
+        lines = [head]
+        for r, row in enumerate(self.rows):
+            lines.append(f"{_ind(indent + 1)}row[{r}]:")
+            for c, cell in enumerate(row):
+                lines.append(f"{_ind(indent + 2)}cell[{c}]:")
+                lines.append(cell.pretty(indent + 3))
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +282,29 @@ _COMMAND_ARITY: dict[str, int] = {
     "mathbf": 1,
     "mathrm": 1,
 }
+
+# 방향 A 로 행/열 분해를 지원하는 환경 이름 (별표 변형은 별표를 떼고 대조).
+_MATRIX_ENVS = {
+    "matrix",
+    "pmatrix",
+    "bmatrix",
+    "Bmatrix",
+    "vmatrix",
+    "Vmatrix",
+    "smallmatrix",
+}
+_ALIGN_ENVS = {
+    "aligned",
+    "align",
+    "alignat",
+    "gathered",
+    "gather",
+    "split",
+    "eqnarray",
+}
+_CASES_ENVS = {"cases", "dcases"}
+_ARRAY_ENVS = {"array"}
+_SUPPORTED_ENVS = _MATRIX_ENVS | _ALIGN_ENVS | _CASES_ENVS | _ARRAY_ENVS
 
 
 class _Parser:
@@ -341,6 +393,11 @@ class _Parser:
             return Text(tok.value)
         if tok.kind == TokenKind.COMMAND:
             self._advance()
+            if tok.value == "begin":
+                return self._parse_environment()
+            if tok.value == "end":
+                # \begin 짝 없이 등장한 \end → 폴백 (요구 5)
+                raise LatexParseError("짝 맞는 \\begin 없는 \\end")
             arity = _COMMAND_ARITY.get(tok.value, 0)
             args = [self._parse_argument(f"\\{tok.value}") for _ in range(arity)]
             return Command(tok.value, args)
@@ -356,6 +413,123 @@ class _Parser:
         if tok.kind in (TokenKind.LBRACE, TokenKind.CHAR, TokenKind.COMMAND):
             return self._parse_atom()
         raise LatexParseError(f"{who} 의 인자로 부적절한 토큰: {tok.value!r}")
+
+    # -- 환경 처리 (방향 A) --------------------------------------------------
+
+    def _parse_environment(self) -> Environment:
+        r"""``\begin`` 소비 직후 호출. 환경 전체를 :class:`Environment` 로 묶는다.
+
+        미지원 환경 이름(요구 4)·짝 불일치(요구 5) 는 :class:`LatexParseError`
+        를 던져 :func:`parse` 경계에서 폴백(원본 보존) 으로 흡수되게 한다.
+        중첩 환경은 셀 파싱이 :meth:`_parse_atom` 으로 재귀하며 처리된다(요구 6).
+        """
+        name = self._read_braced_name("\\begin")
+        base = name.rstrip("*")  # 별표 변형은 기본 이름으로 취급 (요구 3)
+        if base not in _SUPPORTED_ENVS:
+            raise LatexParseError(f"미지원 환경: {base!r}")
+        col_spec = self._maybe_col_spec() if base in _ARRAY_ENVS else None
+        rows = self._parse_env_rows(base)
+        return Environment(name=base, rows=rows, col_spec=col_spec)
+
+    def _read_braced_name(self, who: str) -> str:
+        r"""``{ ... }`` 안의 환경 이름 문자열을 읽는다 (CHAR 만 허용)."""
+        tok = self._peek()
+        if tok is None or tok.kind != TokenKind.LBRACE:
+            raise LatexParseError(f"{who} 뒤에 환경 이름 '{{...}}' 가 없음")
+        self._advance()  # {
+        chars: list[str] = []
+        while True:
+            t = self._peek()
+            if t is None:
+                raise LatexParseError("환경 이름 '{...}' 가 닫히지 않음")
+            if t.kind == TokenKind.RBRACE:
+                self._advance()
+                break
+            if t.kind == TokenKind.CHAR:
+                chars.append(t.value)
+                self._advance()
+            else:
+                raise LatexParseError("환경 이름에 부적절한 토큰")
+        if not chars:
+            raise LatexParseError("환경 이름이 비어 있음")
+        return "".join(chars)
+
+    def _maybe_col_spec(self) -> str | None:
+        r"""``array`` 직후의 열 정렬 지정자 ``{ccc}`` 를 원문으로 읽는다.
+
+        ``|`` 등 정렬 지정자 내부 문자는 CHAR 로, 드물게 등장하는 명령어는
+        백슬래시를 붙여 원문 그대로 보존한다. 지정자가 없으면 ``None``.
+        """
+        tok = self._peek()
+        if tok is None or tok.kind != TokenKind.LBRACE:
+            return None
+        self._advance()  # {
+        chars: list[str] = []
+        while True:
+            t = self._peek()
+            if t is None:
+                raise LatexParseError("array 열 지정자 '{...}' 가 닫히지 않음")
+            if t.kind == TokenKind.RBRACE:
+                self._advance()
+                break
+            if t.kind == TokenKind.CHAR:
+                chars.append(t.value)
+            elif t.kind == TokenKind.COMMAND:
+                chars.append("\\" + t.value)
+            else:
+                raise LatexParseError("array 열 지정자에 부적절한 토큰")
+            self._advance()
+        return "".join(chars)
+
+    def _parse_env_rows(self, env_name: str) -> list[list[Group]]:
+        r"""``\end{env_name}`` 까지의 본문을 행 → 칸 2 차원으로 분해한다.
+
+        ``&`` 는 칸을, ``\\`` 는 행을 가른다. 각 칸은 파싱된 하위 트리를 담은
+        :class:`Group`. 후행 ``\\`` 가 만든 빈 행은 제거한다.
+        """
+        rows: list[list[Group]] = []
+        row: list[Group] = []
+        cell: list[Node] = []
+
+        def flush_cell() -> None:
+            row.append(Group(list(cell)))
+            cell.clear()
+
+        def flush_row() -> None:
+            flush_cell()
+            rows.append(list(row))
+            row.clear()
+
+        while True:
+            tok = self._peek()
+            if tok is None:
+                raise LatexParseError(f"환경 {env_name!r} 의 \\end 가 누락됨")
+            if tok.kind == TokenKind.COMMAND and tok.value == "end":
+                self._advance()  # end
+                end_name = self._read_braced_name("\\end").rstrip("*")
+                if end_name != env_name:
+                    raise LatexParseError(
+                        f"환경 짝 불일치: begin {env_name!r} vs end {end_name!r}"
+                    )
+                flush_row()
+                break
+            if tok.kind == TokenKind.ALIGN:
+                self._advance()
+                flush_cell()
+                continue
+            if tok.kind == TokenKind.ROWSEP:
+                self._advance()
+                flush_row()
+                continue
+            if tok.kind == TokenKind.RBRACE:
+                raise LatexParseError("환경 본문에서 여는 괄호 없는 '}'")
+            atom = self._parse_atom()
+            cell.append(self._maybe_scripts(atom))
+
+        # 후행 \\ 가 만든 '빈 칸 1 개짜리 빈 행' 은 형식상 산물이므로 제거
+        if rows and len(rows[-1]) == 1 and not rows[-1][0].children:
+            rows.pop()
+        return rows
 
 
 # ---------------------------------------------------------------------------
