@@ -77,9 +77,15 @@ def extract_style_id_to_name(header_xml: bytes) -> dict[str, str]:
 def _extract_paragraph_text(p_element: etree._Element) -> str:
     """``hp:p`` 1 개에서 *자기 자신의* 본문 텍스트만 결합한다.
 
-    ``hp:run > hp:t`` 노드들의 텍스트를 순서대로 이어 붙인다. 단, 다음
-    경계 안의 후손 ``hp:t`` 는 *별도 ``hp:p`` 로 따로 열거되므로* 이중
-    카운트 방지를 위해 제외한다:
+    ``hp:run > hp:t`` 노드들의 텍스트를 순서대로 이어 붙인다. 같은 ``hp:run``
+    안의 ``hp:equation`` (수식) 도 문서 순서대로 함께 노출하되, 그 자리에는
+    내용 없는 자리표시 ``"[수식]"`` 만 넣는다 (HNC 내용 검증은 전용 테스트의
+    몫). 이렇게 해야 디스플레이 수식 단락 (본문 ``hp:t`` 가 없는 단락) 이 빈
+    단락으로 오인되지 않고, 인라인 수식도 텍스트 시퀀스에 나타난다. 자리표시는
+    그림 단락의 ``"[그림]"`` 과 동일한 관례를 따른 것이다.
+
+    단, 다음 경계 안의 후손 ``hp:t``/``hp:equation`` 은 *별도 ``hp:p`` 로 따로
+    열거되므로* 이중 카운트 방지를 위해 제외한다:
 
     - ``hp:tbl``: 표 셀 안의 단락
     - ``hp:pic``: 그림 캡션 (``hp:pic > hp:caption > hp:subList > hp:p``)
@@ -93,18 +99,24 @@ def _extract_paragraph_text(p_element: etree._Element) -> str:
     pic_tag = f"{{{HWPML_PARA_NS}}}pic"
     tbl_tag = f"{{{HWPML_PARA_NS}}}tbl"
     footnote_tag = f"{{{HWPML_PARA_NS}}}footNote"
+    t_tag = f"{{{HWPML_PARA_NS}}}t"
+    equation_tag = f"{{{HWPML_PARA_NS}}}equation"
     parts: list[str] = []
     has_pic = False
-    for t_node in p_element.iter(f"{{{HWPML_PARA_NS}}}t"):
-        if not t_node.text:
+    for node in p_element.iter(t_tag, equation_tag):
+        if _is_descendant_of_tag(node, p_element, tbl_tag):
             continue
-        if _is_descendant_of_tag(t_node, p_element, tbl_tag):
+        if _is_descendant_of_tag(node, p_element, pic_tag):
             continue
-        if _is_descendant_of_tag(t_node, p_element, pic_tag):
+        if _is_descendant_of_tag(node, p_element, footnote_tag):
             continue
-        if _is_descendant_of_tag(t_node, p_element, footnote_tag):
-            continue
-        parts.append(t_node.text)
+        if node.tag == equation_tag:
+            # 골든은 수식의 존재·위치만 검사한다. HNC 내용 검증은 전용
+            # 테스트(test_hnc, 빌더 테스트) 의 몫이므로, 그림의 "[그림]" 과
+            # 동일하게 내용 없는 placeholder "[수식]" 만 노출한다.
+            parts.append("[수식]")
+        elif node.text:
+            parts.append(node.text)
     if not parts:
         # hp:pic 직속 자손이 있으면 alt 텍스트 (shapeComment) 를 노출.
         for pic in p_element.iter(pic_tag):

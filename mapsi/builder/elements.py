@@ -470,23 +470,23 @@ def _make_run_with_equations(
     marks: list[dict[str, Any]],
     char_pr_id: str,
 ) -> etree._Element:
-    """본문 ``hp:run`` 안에 평문과 수식 마커 텍스트를 번갈아 emit (Phase 9).
+    """본문 ``hp:run`` 안에 평문과 진짜 ``hp:equation`` 노드를 번갈아 emit.
 
-    각주와 달리 수식은 마커가 평문 텍스트이므로 ``hp:ctrl`` 없이 ``hp:t``
-    만으로 처리된다. ``mapsi.math.converter.convert_equation`` 의 결과는
-    이미 ``[hnc 수식]…[/hnc 수식]`` 마커로 감싸진 문자열이므로, 빌더는 그
-    문자열을 그대로 ``hp:t`` 에 박기만 한다 (ADR 0002).
+    평문 구간은 ``hp:t`` 로, 수식 자리는 :func:`mapsi.builder.equation.
+    build_equation` 이 만든 ``hp:equation`` 노드를 ``run`` 의 **직접 자식**
+    으로 append 한다 (``hp:ctrl`` 래핑 없음 — 표본 분석 기준). 따라서 인라인
+    수식은 자연히 ``[hp:t 평문][hp:equation][hp:t 평문]`` 순서가 된다.
 
     Display equation 단락은 ``text=""`` 이고 ``marks=[{offset:0, ...}]`` 한
-    개만 있는 형태로 들어온다 — 이 경우 빈 ``hp:t`` 1개 + 마커 ``hp:t``
-    1개가 나온다. 한/글이 빈 ``hp:t`` 를 무난히 처리하므로 Inline 케이스의
-    "빈 ``hp:t`` 회피" 와 동일한 정책 (offset 이 cursor 와 같으면 평문
-    skip) 을 적용한다.
+    개만 있는 형태로 들어온다 — 이 경우 앞 평문 ``hp:t`` 는 생략(offset 이
+    cursor 와 같으면 skip)되어 ``run`` 안에 ``hp:equation`` 하나만 들어간다.
+    인라인/디스플레이 모두 별도 정렬 없이 동일한 일반 단락을 쓰며, display
+    플래그는 :func:`build_equation` 에 전달되되 노드 구조엔 영향을 주지 않는다.
 
-    Lazy import (``convert_equation``): 수식 없는 변환에서는 LLM SDK 를
-    임포트하지 않도록 함수 안에서 import 한다.
+    Lazy import (``build_equation``): 수식 없는 변환에서는 수식/LLM 관련
+    모듈을 임포트하지 않도록 함수 안에서 import 한다.
     """
-    from ..math.converter import convert_equation
+    from .equation import build_equation
 
     run = etree.Element(f"{_HP}run", attrib={"charPrIDRef": char_pr_id})
     sorted_marks = sorted(marks, key=lambda m: m.get("offset", 0))
@@ -497,11 +497,11 @@ def _make_run_with_equations(
         if offset > cursor:
             t_before = etree.SubElement(run, f"{_HP}t")
             t_before.text = text[cursor:offset]
-        marker_text = convert_equation(
-            mark.get("latex", ""), bool(mark.get("display", False))
+        run.append(
+            build_equation(
+                mark.get("latex", ""), bool(mark.get("display", False))
+            )
         )
-        t_marker = etree.SubElement(run, f"{_HP}t")
-        t_marker.text = marker_text
         cursor = offset
     if cursor < len(text):
         t_after = etree.SubElement(run, f"{_HP}t")
