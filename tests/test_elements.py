@@ -170,7 +170,11 @@ class TestBuildTableWrapper:
         assert cap_p.get("styleIDRef") == "11"
 
     def test_caption_uses_autonum_pattern(self, style_map, style_table) -> None:
-        """캡션은 ``<hp:t>표 </hp:t><autoNum/><hp:t> 본문</hp:t>`` 패턴."""
+        """캡션은 ``<hp:t><표 </hp:t><autoNum/><hp:t>> 본문</hp:t>`` 패턴.
+
+        꺾쇠가 접두어 앞(``<``)과 자동 번호 뒤(``>``)에 평문으로 배치되어,
+        한/글에서 ``<표 1> 분기별 매출`` 로 보인다.
+        """
         wrapper = build_table_wrapper(
             _make_table_block([["x"]], caption="분기별 매출"),
             style_map,
@@ -182,7 +186,7 @@ class TestBuildTableWrapper:
         )
         assert run is not None
         ts = run.findall(f"{HP_NS}t")
-        assert [t.text for t in ts] == ["표 ", " 분기별 매출"]
+        assert [t.text for t in ts] == ["<표 ", "> 분기별 매출"]
         auto_num = run.find(f"{HP_NS}ctrl/{HP_NS}autoNum")
         assert auto_num is not None
         assert auto_num.get("numType") == "TABLE"

@@ -6,10 +6,10 @@ description: |
     노출하므로 alt 텍스트 자체가 시퀀스에 보인다.
   - 그림 직후 "그림 N. xxx" 단락이 "그림캡션" 스타일로 승격되어 hp:pic 내부
     hp:caption 으로 흡수된다 (별도 단락 emit 안 함, 표와 동일 모델).
-  - 캡션 텍스트는 "그림  본문" (이중 공백) 으로 추출. 이유: <hp:t>그림 </hp:t>
-    + <hp:autoNum/> + <hp:t> 본문</hp:t> 구조이며 inspect 가 hp:t 들만
-    합치므로 autoNum 의 숫자 자리는 빠진다. 한/글 뷰어에서는 "그림 1 본문"
-    으로 정상 표시.
+  - 캡션 텍스트는 "<그림 > 본문" 으로 추출. 이유: <hp:t><그림 </hp:t>
+    + <hp:autoNum/> + <hp:t>> 본문</hp:t> 구조(꺾쇠를 번호 좌우에 평문 배치)
+    이며 inspect 가 hp:t 들만 합치므로 autoNum 의 숫자 자리는 빠진다.
+    한/글 뷰어에서는 "<그림 1> 본문" 으로 표시.
   - 빈 alt 의 그림 (두 번째 figure) 은 그림 단락이지만 hp:shapeComment 가
     없어 inspect 가 placeholder "[그림]" 으로 노출 → filter_nonempty 통과.
   - 같은 src 가 두 번 등장해도 BinData 에는 한 번만 복사된다 (id 공유).
@@ -25,7 +25,7 @@ style_sequence:
 text_sequence:
   - 앞 단락 본문입니다.
   - 농림사업정보시스템의 개요
-  - "그림  농림사업정보시스템의 개요"
+  - "<그림 > 농림사업정보시스템의 개요"
   - 중간 단락입니다.
   - "[그림]"
   - 뒤 단락 본문입니다.
