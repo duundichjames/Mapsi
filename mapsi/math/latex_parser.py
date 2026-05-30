@@ -74,6 +74,7 @@ class TokenKind(enum.Enum):
     ALIGN = "align"
     ROWSEP = "rowsep"
     CHAR = "char"
+    SPACE = "space"
 
 
 @dataclass(frozen=True)
@@ -133,11 +134,53 @@ def tokenize(latex: str) -> list[Token]:
             tokens.append(Token(TokenKind.ALIGN, c))
             i += 1
         elif c.isspace():
-            i += 1  # 수식 내 공백은 LaTeX 관례대로 무시
+            # 공백은 일단 SPACE 토큰으로 모은다(연속 공백은 1 개로). 일반
+            # 공백은 _filter_spaces 가 버리고, \text 인자 안의 공백만 남긴다.
+            j = i
+            while j < n and latex[j].isspace():
+                j += 1
+            tokens.append(Token(TokenKind.SPACE, " "))
+            i = j
         else:
             tokens.append(Token(TokenKind.CHAR, c))
             i += 1
-    return tokens
+    return _filter_spaces(tokens)
+
+
+# 인자가 텍스트 모드라 내부 공백을 보존해야 하는 명령어 (틸드로 변환됨).
+_SPACE_PRESERVING_COMMANDS = {"text"}
+
+
+def _filter_spaces(tokens: list[Token]) -> list[Token]:
+    r"""일반 공백 ``SPACE`` 토큰은 버리고 ``\text{...}`` 인자 안의 것만 남긴다.
+
+    LaTeX 수식 모드의 일반 공백(``a + b`` 의 공백) 은 무시되지만(항 구분은
+    표기 규칙 단계가 담당), ``\text`` 의 인자는 텍스트 모드라 공백이 의미를
+    가지므로 보존한다. 중첩 중괄호도 추적해 ``\text`` 영역 안이면 유지한다.
+    """
+    out: list[Token] = []
+    brace_is_text: list[bool] = []  # 각 여는 중괄호가 \text 인자에 속하는가
+    pending_text = False  # 직전 의미 토큰이 \text 명령인가
+    for tok in tokens:
+        if tok.kind == TokenKind.COMMAND and tok.value in _SPACE_PRESERVING_COMMANDS:
+            pending_text = True
+            out.append(tok)
+        elif tok.kind == TokenKind.LBRACE:
+            brace_is_text.append(pending_text)
+            pending_text = False
+            out.append(tok)
+        elif tok.kind == TokenKind.RBRACE:
+            if brace_is_text:
+                brace_is_text.pop()
+            pending_text = False
+            out.append(tok)
+        elif tok.kind == TokenKind.SPACE:
+            if any(brace_is_text):
+                out.append(tok)  # \text 인자 안 → 보존 (\text {..} 위해 pending 유지)
+        else:
+            pending_text = False
+            out.append(tok)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +408,12 @@ class _Parser:
             if tok.kind == TokenKind.ROWSEP:
                 self._advance()
                 children.append(RowSep())
+                continue
+            if tok.kind == TokenKind.SPACE:
+                # 필터를 거쳐 여기 오는 SPACE 는 \text 인자 안의 것뿐이다.
+                # 보존된 공백을 Text(" ") 로 두면 변환기가 틸드로 푼다.
+                self._advance()
+                children.append(Text(" "))
                 continue
             atom = self._parse_atom()
             children.append(self._maybe_scripts(atom))

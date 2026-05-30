@@ -99,10 +99,11 @@ class TestDecorationFont:
         assert _packed(r"\boldsymbol{y}") == "bold{y}"
         assert _packed(r"\mathrm{d}") == "rm{d}"
 
-    def test_text_wrapped_in_quotes(self) -> None:
+    def test_text_no_quotes(self) -> None:
+        # \text 는 따옴표 없이 내용 그대로 (표본 경향)
         res = hnc.to_hnc(r"\text{abc}")
         assert res.ok
-        assert res.hnc == '"abc"'
+        assert res.hnc == "abc"
 
     def test_underbrace_special(self) -> None:
         assert _packed(r"\underbrace{x}_{y}") == "underbrace{y}{x}"
@@ -216,16 +217,35 @@ class TestPreciseSpacing:
         assert _hnc(r"대위변제율_t") == "대위변제율_{t}"
 
 
-class TestTextQuoting:
-    def test_text_with_content_quoted(self) -> None:
-        # \text 만 큰따옴표로 묶음 (요구 3)
-        assert _hnc(r"\text{premium}") == '"premium"'
+class TestTextAndSpacing:
+    def test_text_without_space_no_quotes(self) -> None:
+        # 공백 없는 \text 도 따옴표 없이 내용 그대로 (일관 규칙)
+        assert _hnc(r"\text{premium}") == "premium"
+
+    def test_text_with_space_becomes_tilde(self) -> None:
+        # \text 내부의 의도된 공백 → 틸드
+        assert _hnc(r"\text{여러 단어}") == "여러~단어"
 
     def test_bare_korean_term_not_quoted(self) -> None:
-        # 공백 없는 한글 항은 따옴표 없이 그대로 (요구 3 확인)
         out = _hnc("저신용자비율")
         assert out == "저신용자비율"
         assert '"' not in out
+
+    def test_explicit_space_commands_become_tilde(self) -> None:
+        # \, \; \: \  → 틸드 1 개, 양옆 항에 붙는다
+        assert _hnc(r"a\,b") == "a~b"
+        assert _hnc(r"a\;b") == "a~b"
+        assert _hnc(r"a\ b") == "a~b"
+
+    def test_quad_widths_use_multiple_tildes(self) -> None:
+        # 넓은 간격: \quad → ~~, \qquad → ~~~~ (quad 의 2 배 폭)
+        assert _hnc(r"a\quad b") == "a~~b"
+        assert _hnc(r"a\qquad b") == "a~~~~b"
+
+    def test_normal_space_has_no_tilde(self) -> None:
+        # 일반 공백(a + b) 은 항 구분 공백만, 틸드 끼어들지 않음
+        assert _hnc(r"a + b") == "a + b"
+        assert "~" not in _hnc(r"\alpha + \beta")
 
 
 class TestSampleLikeness:

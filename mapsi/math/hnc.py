@@ -178,6 +178,18 @@ _FONTS = {
     "mathrm": "rm",
 }
 
+#: 명시적 공백 명령 → HNC 틸드(~). 의도된 공백만 보존한다(일반 공백은 무시).
+#: 좁은 간격(``\,`` ``\;`` ``\:`` ``\ ``) 은 틸드 1 개, 넓은 간격은 폭에
+#: 비례해 ``\quad`` → 2 개, ``\qquad`` → 4 개(= quad 의 2 배) 로 근사한다.
+_SPACE_COMMANDS = {
+    ",": "~",
+    ";": "~",
+    ":": "~",
+    " ": "~",  # \  (백슬래시 + 공백)
+    "quad": "~~",
+    "qquad": "~~~~",
+}
+
 # -- 환경 → HNC 래퍼 --------------------------------------------------------
 
 #: 행렬 계열 중 그대로 매칭되는 래퍼 (array 는 matrix 에 준함).
@@ -267,6 +279,8 @@ class _HncConverter:
         """
         if isinstance(node, Text):
             return "op" if node.value in _OP_CHARS else "ord"
+        if isinstance(node, Command) and node.name in _SPACE_COMMANDS:
+            return "ord"  # 틸드는 양옆 항에 붙는다 (금리갭~조정)
         if isinstance(node, Script):
             return _HncConverter._left_kind(node.base)
         return "word"
@@ -276,6 +290,8 @@ class _HncConverter:
         """노드의 **오른쪽 가장자리** 종류. 첨자/명령/그룹은 ``}`` 등으로 끝나 'word'."""
         if isinstance(node, Text):
             return "op" if node.value in _OP_CHARS else "ord"
+        if isinstance(node, Command) and node.name in _SPACE_COMMANDS:
+            return "ord"  # 틸드는 양옆 항에 붙는다
         return "word"
 
     def _arg(self, node: Node | None, tight: bool = False) -> str:
@@ -339,6 +355,8 @@ class _HncConverter:
 
     def _render_command(self, cmd: Command) -> str:
         name = cmd.name
+        if name in _SPACE_COMMANDS:
+            return _SPACE_COMMANDS[name]
         if name in _FRACTIONS:
             a = self._arg(cmd.args[0]) if len(cmd.args) > 0 else ""
             b = self._arg(cmd.args[1]) if len(cmd.args) > 1 else ""
@@ -349,7 +367,10 @@ class _HncConverter:
                 return "root {" + self._arg(cmd.opt) + "} of {" + x + "}"
             return "sqrt {" + x + "}"
         if name == "text":
-            return '"' + self._literal(cmd.args[0]) + '"' if cmd.args else '""'
+            # 표본 경향: 텍스트 항의 의도된 공백은 따옴표가 아니라 틸드로
+            # 표현된다. 공백 유무와 무관하게 일관되게 내용을 그대로 두되 내부
+            # 공백만 틸드로 바꾼다 (\text{여러 단어} → 여러~단어).
+            return self._literal(cmd.args[0]).replace(" ", "~") if cmd.args else ""
         if name == "underbrace":  # 첨자 없이 단독으로 온 경우
             return "underbrace {" + (self._arg(cmd.args[0]) if cmd.args else "") + "}"
         if name in _DECORATIONS:
