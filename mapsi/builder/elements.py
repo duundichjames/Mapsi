@@ -867,7 +867,7 @@ def _build_caption(text: str, caption_entry: StyleEntry) -> etree._Element:
         p, f"{_HP}run", attrib={"charPrIDRef": caption_entry.char_pr_id}
     )
     prefix_t = etree.SubElement(run, f"{_HP}t")
-    prefix_t.text = "표 "
+    prefix_t.text = "<표 "  # 여는 꺾쇠 + 접두어
     ctrl = etree.SubElement(run, f"{_HP}ctrl")
     auto_num = etree.SubElement(
         ctrl,
@@ -886,7 +886,7 @@ def _build_caption(text: str, caption_entry: StyleEntry) -> etree._Element:
         },
     )
     body_t = etree.SubElement(run, f"{_HP}t")
-    body_t.text = " " + text
+    body_t.text = "> " + text  # 닫는 꺾쇠 + 본문
     return caption
 
 
@@ -1337,7 +1337,7 @@ def _build_pic_caption(
         p, f"{_HP}run", attrib={"charPrIDRef": caption_entry.char_pr_id}
     )
     prefix_t = etree.SubElement(run, f"{_HP}t")
-    prefix_t.text = "그림 "
+    prefix_t.text = "<그림 "  # 여는 꺾쇠 + 접두어
     ctrl = etree.SubElement(run, f"{_HP}ctrl")
     auto_num = etree.SubElement(
         ctrl,
@@ -1356,7 +1356,7 @@ def _build_pic_caption(
         },
     )
     body_t = etree.SubElement(run, f"{_HP}t")
-    body_t.text = " " + text
+    body_t.text = "> " + text  # 닫는 꺾쇠 + 본문
     return caption
 
 
