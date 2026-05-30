@@ -918,3 +918,61 @@ class TestAmsmathEnvironments:
         md = _write(tmp_path, "```\n\\begin{equation} x \\end{equation}\n```\n")
         blocks = parse_markdown(md)
         assert self._eq_marks(blocks) == []
+
+
+class TestBackslashMath:
+    r"""texmath brackets 프리셋의 ``\(...\)`` / ``\[...\]`` 인식."""
+
+    @staticmethod
+    def _eq_marks(blocks: list[Block]) -> list[dict]:
+        marks: list[dict] = []
+        for b in blocks:
+            if b.meta and b.meta.get("equation_marks"):
+                marks.extend(b.meta["equation_marks"])
+        return marks
+
+    def test_inline_paren_is_inline_equation(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, r"본문 \(x^2\) 끝." + "\n")
+        blocks = parse_markdown(md)
+        marks = self._eq_marks(blocks)
+        assert len(marks) == 1
+        assert marks[0]["latex"] == "x^2"
+        assert marks[0]["display"] is False  # 인라인
+        # 같은 paragraph 의 meta 로 보관 (text 는 평문만)
+        para = next(b for b in blocks if b.meta and b.meta.get("equation_marks"))
+        assert para.role == "paragraph"
+        assert "x^2" not in para.text  # 수식은 mark 로 빠짐
+
+    def test_display_bracket_is_display_equation(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, r"\[x^2 = y\]" + "\n")
+        blocks = parse_markdown(md)
+        marks = self._eq_marks(blocks)
+        assert len(marks) == 1
+        assert marks[0]["latex"] == "x^2 = y"
+        assert marks[0]["display"] is True  # 디스플레이
+        eq_block = next(b for b in blocks if b.meta and b.meta.get("equation_marks"))
+        assert eq_block.text == ""  # 독립 단락
+
+    def test_code_span_backslash_not_captured(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, r"코드 `\(x^2\)` 스팬." + "\n")
+        assert self._eq_marks(parse_markdown(md)) == []
+
+    def test_code_fence_backslash_not_captured(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "```\n\\(x\\)\n\\[y\\]\n```\n")
+        assert self._eq_marks(parse_markdown(md)) == []
+
+    def test_mixed_dollar_bracket_env_each_handled(self, tmp_path: Path) -> None:
+        # 한 문서에 달러/브래킷/환경이 섞여도 각 구분자별로 올바르게 처리
+        doc = (
+            "인라인 $a$ 와 \\(b\\) 함께.\n\n"
+            "$$c$$\n\n"
+            "\\[d\\]\n\n"
+            "\\begin{align} x &= y \\end{align}\n"
+        )
+        md = _write(tmp_path, doc)
+        marks = self._eq_marks(parse_markdown(md))
+        latexes = [m["latex"] for m in marks]
+        assert latexes == ["a", "b", "c", "d", r"\begin{align} x &= y \end{align}"]
+        # 인라인(달러 a, 브래킷 b)은 display=False, 나머지는 display=True
+        displays = [m["display"] for m in marks]
+        assert displays == [False, False, True, True, True]

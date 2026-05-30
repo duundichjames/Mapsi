@@ -84,6 +84,7 @@ from markdown_it.token import Token
 from mdit_py_plugins.amsmath import amsmath_plugin
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from mdit_py_plugins.footnote import footnote_plugin
+from mdit_py_plugins.texmath import texmath_plugin
 
 
 __all__ = ["Block", "parse_markdown", "read_front_matter", "read_inline_bibtex"]
@@ -147,6 +148,11 @@ def parse_markdown(md_path: str | Path) -> list[Block]:
         .use(footnote_plugin)
         .use(dollarmath_plugin)
         .use(amsmath_plugin)
+        # 백슬래시 수식 구문 \(...\) / \[...\] 인식. brackets 전용이라 달러는
+        # dollarmath 가 그대로 맡고, texmath 는 core escape 보다 먼저 인라인
+        # 규칙을 등록해 \( 가 평문화되기 전에 가로챈다. dollarmath 와 같은
+        # math_inline/math_block 토큰을 내므로 _tokens_to_blocks 는 무변경.
+        .use(texmath_plugin, delimiters="brackets")
     )
     tokens = md.parse(body)
     return _tokens_to_blocks(tokens)
