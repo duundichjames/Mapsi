@@ -37,3 +37,6 @@ uploads/
 *.html
 *_cache/
 *_files/
+
+# 저장소 ruleset 백업/임시 파일 (설정 정보 포함 — 커밋 금지)
+ruleset_*.json
