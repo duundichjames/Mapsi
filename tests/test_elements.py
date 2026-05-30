@@ -645,8 +645,11 @@ class TestBuildParagraphWithFootnotes:
 class TestEquationParagraph:
     """``meta["equation_marks"]`` 가 있는 paragraph 의 빌드 결과 검증.
 
-    세션 conftest 가 ``MAPSI_NO_LLM=1`` 을 강제하므로 모든 마커 본문은
-    LaTeX 원문 그대로 ``[hnc 수식]…[/hnc 수식]`` 으로 박힌다.
+    수식 자리에는 진짜 ``hp:equation`` 노드가 ``hp:run`` 의 직접 자식으로
+    들어간다 (``hp:ctrl`` 래핑 없음). 본 테스트는 **노드 구조와 배치 순서**
+    (평문 ``hp:t`` 와 ``hp:equation`` 의 순서) 만 검증한다. HNC 문자열의
+    정확한 내용은 ``test_hnc`` 와 빌더 테스트(``test_equation_builder``) 의
+    몫이므로 여기서는 단언하지 않는다.
     """
 
     @staticmethod
@@ -657,7 +660,19 @@ class TestEquationParagraph:
             meta={"equation_marks": marks},
         )
 
-    def test_inline_equation_emits_marker_text_in_run(
+    @staticmethod
+    def _run_child_kinds(run) -> list[str]:
+        """``run`` 직계 자식들의 local name 순서 (예: ['t', 'equation', 't'])."""
+        return [c.tag.replace(HP_NS, "") for c in run]
+
+    @staticmethod
+    def _assert_is_equation(node) -> None:
+        """노드가 hp:equation 이고 hp:script + 필수 속성(version) 을 가지는지."""
+        assert node.tag == f"{HP_NS}equation"
+        assert node.get("version") == "Equation Version 60"
+        assert node.find(f"{HP_NS}script") is not None
+
+    def test_inline_equation_emits_equation_node_in_run(
         self, style_map, style_table
     ) -> None:
         block = self._make_block(
@@ -667,13 +682,11 @@ class TestEquationParagraph:
         p = build_paragraph(block, style_map, style_table)
         assert p.get("styleIDRef") == "3"  # 본문
         run = p.find(f"{HP_NS}run")
+        # 평문 앞 / 수식 / 평문 뒤 = hp:t, hp:equation, hp:t
+        assert self._run_child_kinds(run) == ["t", "equation", "t"]
         ts = run.findall(f"{HP_NS}t")
-        # 평문 앞 / 마커 / 평문 뒤 = 3 개의 hp:t
-        assert [t.text for t in ts] == [
-            "본문 ",
-            "[hnc 수식]a^2+b^2[/hnc 수식]",
-            " 입니다.",
-        ]
+        assert [t.text for t in ts] == ["본문 ", " 입니다."]
+        self._assert_is_equation(run.find(f"{HP_NS}equation"))
 
     def test_inline_equation_at_start_skips_leading_empty_t(
         self, style_map, style_table
@@ -683,11 +696,11 @@ class TestEquationParagraph:
             [{"offset": 0, "latex": "x", "display": False}],
         )
         p = build_paragraph(block, style_map, style_table)
-        ts = p.find(f"{HP_NS}run").findall(f"{HP_NS}t")
-        assert [t.text for t in ts] == [
-            "[hnc 수식]x[/hnc 수식]",
-            " 는 변수.",
-        ]
+        run = p.find(f"{HP_NS}run")
+        # 선두 빈 평문은 생략 → hp:equation, hp:t
+        assert self._run_child_kinds(run) == ["equation", "t"]
+        assert [t.text for t in run.findall(f"{HP_NS}t")] == [" 는 변수."]
+        self._assert_is_equation(run.find(f"{HP_NS}equation"))
 
     def test_inline_equation_at_end_skips_trailing_empty_t(
         self, style_map, style_table
@@ -697,11 +710,11 @@ class TestEquationParagraph:
             [{"offset": 3, "latex": "y", "display": False}],
         )
         p = build_paragraph(block, style_map, style_table)
-        ts = p.find(f"{HP_NS}run").findall(f"{HP_NS}t")
-        assert [t.text for t in ts] == [
-            "수식 ",
-            "[hnc 수식]y[/hnc 수식]",
-        ]
+        run = p.find(f"{HP_NS}run")
+        # 후미 빈 평문은 생략 → hp:t, hp:equation
+        assert self._run_child_kinds(run) == ["t", "equation"]
+        assert [t.text for t in run.findall(f"{HP_NS}t")] == ["수식 "]
+        self._assert_is_equation(run.find(f"{HP_NS}equation"))
 
     def test_multiple_inline_equations_in_order(
         self, style_map, style_table
@@ -715,29 +728,42 @@ class TestEquationParagraph:
             ],
         )
         p = build_paragraph(block, style_map, style_table)
-        ts = [t.text for t in p.find(f"{HP_NS}run").findall(f"{HP_NS}t")]
-        assert ts == [
+        run = p.find(f"{HP_NS}run")
+        # 평문과 수식이 번갈아: t, eq, t, eq, t, eq, t
+        assert self._run_child_kinds(run) == [
+            "t",
+            "equation",
+            "t",
+            "equation",
+            "t",
+            "equation",
+            "t",
+        ]
+        assert [t.text for t in run.findall(f"{HP_NS}t")] == [
             "값 ",
-            "[hnc 수식]a[/hnc 수식]",
             " 와 ",
-            "[hnc 수식]b[/hnc 수식]",
             " 의 합 ",
-            "[hnc 수식]c[/hnc 수식]",
             " 입니다.",
         ]
+        eqs = run.findall(f"{HP_NS}equation")
+        assert len(eqs) == 3
+        for eq in eqs:
+            self._assert_is_equation(eq)
 
     def test_display_equation_paragraph_uses_본문_style(
         self, style_map, style_table
     ) -> None:
-        """디스플레이 수식 단락도 본문 스타일을 그대로 사용 (ADR 0002)."""
+        """디스플레이 수식 단락도 본문 스타일을 그대로 사용 (별도 정렬 없음)."""
         block = self._make_block(
             "",
             [{"offset": 0, "latex": "\\frac{a}{b}", "display": True}],
         )
         p = build_paragraph(block, style_map, style_table)
         assert p.get("styleIDRef") == "3"  # 본문 (수식 전용 스타일 없음)
-        ts = [t.text for t in p.find(f"{HP_NS}run").findall(f"{HP_NS}t")]
-        assert ts == ["[hnc 수식]\\frac{a}{b}[/hnc 수식]"]
+        run = p.find(f"{HP_NS}run")
+        # 빈 text → run 안에 hp:equation 하나만
+        assert self._run_child_kinds(run) == ["equation"]
+        self._assert_is_equation(run.find(f"{HP_NS}equation"))
 
     def test_footnote_and_equation_both_present_raises(
         self, style_map, style_table

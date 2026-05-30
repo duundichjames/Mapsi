@@ -81,8 +81,10 @@ from typing import Any
 import yaml
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
+from mdit_py_plugins.amsmath import amsmath_plugin
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from mdit_py_plugins.footnote import footnote_plugin
+from mdit_py_plugins.texmath import texmath_plugin
 
 
 __all__ = ["Block", "parse_markdown", "read_front_matter", "read_inline_bibtex"]
@@ -145,6 +147,12 @@ def parse_markdown(md_path: str | Path) -> list[Block]:
         .enable("linkify")
         .use(footnote_plugin)
         .use(dollarmath_plugin)
+        .use(amsmath_plugin)
+        # 백슬래시 수식 구문 \(...\) / \[...\] 인식. brackets 전용이라 달러는
+        # dollarmath 가 그대로 맡고, texmath 는 core escape 보다 먼저 인라인
+        # 규칙을 등록해 \( 가 평문화되기 전에 가로챈다. dollarmath 와 같은
+        # math_inline/math_block 토큰을 내므로 _tokens_to_blocks 는 무변경.
+        .use(texmath_plugin, delimiters="brackets")
     )
     tokens = md.parse(body)
     return _tokens_to_blocks(tokens)
@@ -241,6 +249,30 @@ _LIST_CLOSE_OF = {
 }
 _LIST_OPEN_TYPES = frozenset(_LIST_OPEN_TO_ROLE)
 _LIST_CLOSE_TYPES = frozenset(_LIST_CLOSE_OF.values())
+
+
+# amsmath 토큰 처리: 단일 수식 디스플레이 래퍼만 벗기고, 정렬/행렬 등
+# 구조적 환경은 그대로 latex_parser 에 넘긴다. equation 은 HNC 에 대응하는
+# 래퍼 구문이 없는 "한 줄 수식 번호 매기기" 용도이므로(별 변형 포함) 내부만
+# 남긴다. align/gather/matrix 등은 latex_parser 가 eqalign/matrix 로 처리.
+_DISPLAY_WRAPPER_ENVS = {"equation"}
+
+_AMSMATH_RE = re.compile(
+    r"\\begin\{(?P<name>[A-Za-z]+\*?)\}(?P<body>.*)\\end\{(?P=name)\}",
+    re.DOTALL,
+)
+
+
+def _amsmath_latex(content: str) -> str:
+    r"""amsmath 토큰 content 에서 equation_marks 에 담을 LaTeX 를 결정한다.
+
+    ``equation``/``equation*`` 같은 디스플레이 래퍼는 ``\begin``/``\end`` 를
+    벗기고 내부 수식만, 그 밖의 구조적 환경은 원문 전체를 돌려준다.
+    """
+    m = _AMSMATH_RE.search(content)
+    if m is not None and m.group("name").rstrip("*") in _DISPLAY_WRAPPER_ENVS:
+        return m.group("body").strip()
+    return content.strip()
 
 
 def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
@@ -403,6 +435,24 @@ def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
 
         if tok.type == "math_block":
             latex = (tok.content or "").strip("\n")
+            blocks.append(
+                Block(
+                    role="paragraph",
+                    text="",
+                    meta={
+                        "equation_marks": [
+                            {"offset": 0, "latex": latex, "display": True}
+                        ]
+                    },
+                )
+            )
+            i += 1
+            continue
+
+        if tok.type == "amsmath":
+            # AMS 수식 환경(\begin{...}...\end{...}) → 디스플레이 수식.
+            # math_block($$) 과 동일한 형태의 독립 paragraph Block 으로 발급.
+            latex = _amsmath_latex(tok.content or "")
             blocks.append(
                 Block(
                     role="paragraph",
