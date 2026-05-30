@@ -34,6 +34,10 @@ __all__ = ["HncResult", "to_hnc", "convert_tree"]
 
 _LOG = logging.getLogger(__name__)
 
+#: 항 구분(요구 2) 을 위해 좌우에 공백을 둘러야 하는 단일 연산자 문자.
+#: (낱말 연산자 ``times``/``cdot`` 등은 명령어 → 항상 낱말로 공백 분리됨)
+_OP_CHARS = {"+", "-", "=", "<", ">"}
+
 
 # ===========================================================================
 # 매핑 테이블 (코드와 분리된 데이터; 항목 추가만으로 확장 가능)
@@ -228,16 +232,58 @@ class _HncConverter:
 
     # -- 시퀀스/인자 헬퍼 --------------------------------------------------
 
-    def render_seq(self, children: list[Node]) -> str:
-        """노드 리스트를 최소 공백(한 칸) 으로 이어 붙인다 (요구 5)."""
-        return " ".join(self._render(c) for c in children)
+    def render_seq(self, children: list[Node], tight: bool = False) -> str:
+        """노드 리스트를 공백 규칙에 따라 잇는다.
 
-    def _arg(self, node: Node | None) -> str:
+        body 모드(``tight=False``): 연산자(``+ - = < >`` 및 ``times``/``cdot``
+        등 낱말 연산자) 좌우에 공백을 두고, 일반 문자끼리는 붙인다(``100``,
+        ``GDP``). tight 모드: 첨자 내부처럼 문자끼리는 모두 붙이고 낱말 토큰만
+        공백으로 분리한다(``_{t-1}`` → ``t-1``, ``X rarrow Y``).
+        """
+        out = ""
+        prev_right: str | None = None
+        for child in children:
+            text = self._render(child)
+            if not text:
+                continue
+            cur_left = self._left_kind(child)
+            if prev_right is None:
+                out = text
+            elif tight:
+                space = prev_right == "word" or cur_left == "word"
+                out += (" " + text) if space else text
+            else:
+                glue = prev_right == "ord" and cur_left == "ord"
+                out += text if glue else (" " + text)
+            prev_right = self._right_kind(child)
+        return out
+
+    @staticmethod
+    def _left_kind(node: Node) -> str:
+        """노드의 **왼쪽 가장자리** 종류: 'ord' | 'op' | 'word'.
+
+        첨자 노드는 base 의 왼쪽 종류를 물려받아(예: ``채_{t-1}`` 의 왼쪽은
+        일반문자) 앞 글자와 올바로 붙도록 한다.
+        """
+        if isinstance(node, Text):
+            return "op" if node.value in _OP_CHARS else "ord"
+        if isinstance(node, Script):
+            return _HncConverter._left_kind(node.base)
+        return "word"
+
+    @staticmethod
+    def _right_kind(node: Node) -> str:
+        """노드의 **오른쪽 가장자리** 종류. 첨자/명령/그룹은 ``}`` 등으로 끝나 'word'."""
+        if isinstance(node, Text):
+            return "op" if node.value in _OP_CHARS else "ord"
+        return "word"
+
+    def _arg(self, node: Node | None, tight: bool = False) -> str:
         """인자 렌더링: ``Group`` 은 바깥 중괄호를 벗겨 내용만 돌려준다."""
         if node is None:
             return ""
         if isinstance(node, Group):
-            return self.render_seq(node.children)
+            return self.render_seq(node.children, tight=tight)
         return self._render(node)
 
     # -- 노드 디스패치 ------------------------------------------------------
@@ -275,12 +321,21 @@ class _HncConverter:
                 out += "^{" + self._arg(node.sup) + "}"
             return out
         out = self._render(base)
-        # 첨자 구조는 LaTeX 와 공유: 아래첨자 → 위첨자 순 (요구 2)
-        if node.sub is not None:
-            out += "_{" + self._arg(node.sub) + "}"
-        if node.sup is not None:
-            out += "^{" + self._arg(node.sup) + "}"
-        return out
+        # 첨자 내부는 tight(붙임), 아래첨자 → 위첨자 순.
+        sub_s = (
+            "_{" + self._arg(node.sub, tight=True) + "}"
+            if node.sub is not None
+            else ""
+        )
+        sup_s = (
+            "^{" + self._arg(node.sup, tight=True) + "}"
+            if node.sup is not None
+            else ""
+        )
+        # 같은 base 에 sub·sup 이 모두 있으면 둘 사이에 공백 (요구 1)
+        if sub_s and sup_s:
+            return out + sub_s + " " + sup_s
+        return out + sub_s + sup_s
 
     def _render_command(self, cmd: Command) -> str:
         name = cmd.name
