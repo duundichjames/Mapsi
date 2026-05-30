@@ -52,7 +52,12 @@ def md_to_hwpx(
     from .builder.manifest import update_manifest
     from .builder.section import build_section
     from .packager import package_hwpx
-    from .parser import parse_markdown, read_front_matter, read_inline_bibtex
+    from .parser import (
+        Block,
+        parse_markdown,
+        read_front_matter,
+        read_inline_bibtex,
+    )
 
     md_path = Path(md_path)
     output_path = Path(output_path)
@@ -75,6 +80,26 @@ def md_to_hwpx(
         bib_data = load_bibliography(bib_files, inline_bibtex)
 
     blocks = parse_markdown(md_path)
+
+    # front matter 의 title/author/date 를 문서 앞머리 단락으로 prepend.
+    # 사용자가 명시한 값만 쓰며(없으면 단락 생략), 날짜 자동 채움은 하지 않는다.
+    front_blocks: list[Block] = []
+    title = front_matter.get("title")
+    if title:
+        front_blocks.append(Block(role="doc_title", text=str(title)))
+    author = front_matter.get("author")
+    if author:
+        if isinstance(author, (list, tuple)):
+            author_text = ", ".join(str(a) for a in author if a)
+        else:
+            author_text = str(author)
+        if author_text:
+            front_blocks.append(Block(role="doc_author", text=author_text))
+    date = front_matter.get("date")
+    if date:
+        front_blocks.append(Block(role="doc_date", text=str(date)))
+    blocks = front_blocks + blocks
+
     walked = walk(blocks, bib_data=bib_data)
 
     image_map, manifest_entries = _register_figure_images(

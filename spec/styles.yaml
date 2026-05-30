@@ -18,6 +18,12 @@ header_template: templates/Contents/header.xml
 # 본문/제목 — 한/글 내장 스타일에 직접 대응
 paragraph: 본문
 
+# 문서 앞머리 (front matter) — title/author/date 를 단락으로 출력.
+# 제목은 기존 "제목 1" 스타일, 저자·날짜는 "본문" 스타일에 매핑(header.xml 무변경).
+doc_title: 제목 1
+doc_author: 본문
+doc_date: 본문
+
 heading:
   1: 개요 1
   2: 개요 2
