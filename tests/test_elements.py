@@ -769,9 +769,10 @@ class TestEquationParagraph:
         assert self._run_child_kinds(run) == ["equation"]
         self._assert_is_equation(run.find(f"{HP_NS}equation"))
 
-    def test_footnote_and_equation_both_present_raises(
+    def test_footnote_and_equation_both_present_builds(
         self, style_map, style_table
     ) -> None:
+        """각주 + 수식 공존 단락은 통합 엔진으로 정상 빌드된다 (더 이상 raise X)."""
         block = Block(
             role="paragraph",
             text="x",
@@ -785,8 +786,9 @@ class TestEquationParagraph:
                 ],
             },
         )
-        with pytest.raises(NotImplementedError, match="둘 이상"):
-            build_paragraph(block, style_map, style_table)
+        p = build_paragraph(block, style_map, style_table)
+        assert p.find(f".//{HP_NS}footNote") is not None  # 각주 ctrl
+        assert p.find(f".//{HP_NS}equation") is not None  # 수식 노드
 
 
 class TestInlineFormattingParagraph:
@@ -908,42 +910,74 @@ class TestInlineFormattingParagraph:
         p = build_paragraph(block, style_map, style_table)
         assert self._runs(p) == [("25", "굵고굵음")]
 
-    def test_inline_and_footnote_both_present_raises(
+    def test_inline_and_footnote_both_present_builds(
         self, style_map, style_table
     ) -> None:
+        """인라인 서식(bold) + 각주 공존 단락은 정상 빌드된다."""
         block = Block(
             role="paragraph",
-            text="x",
+            text="굵게 끝.",
             meta={
                 "footnote_marks": [
-                    {"kind": "footnote_ref", "offset": 0,
+                    {"kind": "footnote_ref", "offset": 2,
                      "footnote_id": 0, "text": "주."}
                 ],
                 "inline_marks": [
-                    {"kind": "bold", "start": 0, "end": 1}
+                    {"kind": "bold", "start": 0, "end": 2}
                 ],
             },
         )
-        with pytest.raises(NotImplementedError, match="둘 이상"):
-            build_paragraph(block, style_map, style_table)
+        p = build_paragraph(block, style_map, style_table)
+        assert p.find(f".//{HP_NS}footNote") is not None  # 각주 ctrl
+        charprs = [r.get("charPrIDRef") for r in p.findall(f"{HP_NS}run")]
+        assert "25" in charprs  # bold charPr 세그먼트 존재
 
-    def test_inline_and_equation_both_present_raises(
+    def test_inline_and_equation_both_present_builds(
         self, style_map, style_table
     ) -> None:
+        """인라인 서식(bold) + 수식 공존 단락은 정상 빌드된다."""
         block = Block(
             role="paragraph",
-            text="x",
+            text="굵게 끝.",
             meta={
                 "equation_marks": [
-                    {"offset": 0, "latex": "y", "display": False}
+                    {"offset": 2, "latex": "y", "display": False}
                 ],
                 "inline_marks": [
-                    {"kind": "bold", "start": 0, "end": 1}
+                    {"kind": "bold", "start": 0, "end": 2}
                 ],
             },
         )
-        with pytest.raises(NotImplementedError, match="둘 이상"):
-            build_paragraph(block, style_map, style_table)
+        p = build_paragraph(block, style_map, style_table)
+        assert p.find(f".//{HP_NS}equation") is not None  # 수식 노드
+        charprs = [r.get("charPrIDRef") for r in p.findall(f"{HP_NS}run")]
+        assert "25" in charprs  # bold charPr 세그먼트 존재
+
+
+    def test_multi_mark_footnote_after_bold_structure(
+        self, style_map, style_table
+    ) -> None:
+        """test-mapsi 패턴: 'bold 텍스트 + 각주' → bold 세그먼트는 charPr 25,
+        각주는 그 뒤 base charPr run 에 들어간다."""
+        block = Block(
+            role="paragraph",
+            text="앞 굵게 뒤.",  # bold = [2,4] '굵게', 각주 = offset 4 (bold 밖)
+            meta={
+                "footnote_marks": [
+                    {"kind": "footnote_ref", "offset": 4,
+                     "footnote_id": 0, "text": "주."}
+                ],
+                "inline_marks": [{"kind": "bold", "start": 2, "end": 4}],
+            },
+        )
+        p = build_paragraph(block, style_map, style_table)
+        structs = [
+            (r.get("charPrIDRef"), [c.tag.replace(HP_NS, "") for c in r])
+            for r in p.findall(f"{HP_NS}run")
+        ]
+        # bold(25) run 과 각주 ctrl 을 담은 run 이 모두 존재
+        assert any(cp == "25" for cp, _ in structs)
+        assert any("ctrl" in kids for _, kids in structs)
 
 
 class TestHyperlinkField:

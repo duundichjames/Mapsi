@@ -171,11 +171,22 @@ def build_paragraph(
     eq_marks = meta.get("equation_marks")
     inline_marks = meta.get("inline_marks")
     cite_marks = meta.get("citation_marks")
-    if sum(bool(x) for x in (foot_marks, eq_marks, inline_marks, cite_marks)) > 1:
-        raise NotImplementedError(
-            "한 단락에 각주/수식/인라인 서식/인용이 둘 이상 동시에 있는 경우는 "
-            "v0.2 에서 지원하지 않는다 (ADR 0004 영향 절 참조; 통합은 v0.3)"
-        )
+    n_marks = sum(bool(x) for x in (foot_marks, eq_marks, inline_marks, cite_marks))
+    if n_marks > 1:
+        # 다중 마크: 점+범위 통합 엔진으로 처리 (additive — 단일/무마크는 기존
+        # 빌더 그대로). 처리 못 하는 조합은 UnsupportedMarkCombination 을 던진다.
+        for run in _make_runs_with_marks(
+            block.text,
+            foot_marks,
+            eq_marks,
+            cite_marks,
+            inline_marks,
+            entry.char_pr_id,
+            style_map,
+            style_table,
+        ):
+            p.append(run)
+        return p
     if foot_marks:
         p.append(
             _make_run_with_footnotes(
@@ -463,6 +474,141 @@ def _make_run_with_citations(
         t = etree.SubElement(run, f"{_HP}t")
         t.text = text[cursor:]
     return run
+
+
+class UnsupportedMarkCombination(NotImplementedError):
+    """통합 빌더가 아직 처리하지 못하는 마크 조합 (의도적 미지원).
+
+    실제 코드 버그(다른 예외) 와 구분하기 위한 전용 예외. 후속 단계의 표식
+    폴백은 이 예외만 잡아 단락을 표식으로 대체하고 변환을 계속한다.
+    """
+
+
+def _make_runs_with_marks(
+    text: str,
+    foot_marks: list[dict[str, Any]] | None,
+    eq_marks: list[dict[str, Any]] | None,
+    cite_marks: list[dict[str, Any]] | None,
+    inline_marks: list[dict[str, Any]] | None,
+    base_char_pr_id: str,
+    style_map: dict[str, Any],
+    style_table: dict[str, StyleEntry],
+) -> list[etree._Element]:
+    """점(각주/수식/인용) + 범위(인라인 서식) 마크를 한 단락에서 함께 emit.
+
+    경계 집합 = ``{0, len(text)}`` ∪ 인라인 서식 start/end ∪ 점 offset.
+    정렬한 경계로 세그먼트를 순회하며 charPr 분할 ``hp:run`` 을 만들고, 점
+    offset 위치에 각주 ``hp:ctrl`` / 수식 ``hp:equation`` / 인용 텍스트를
+    삽입한다. 각주·수식·인용은 동일한 offset 점 모델이라 삽입 흐름을 공유한다.
+
+    링크 세그먼트(독립 필드 3-run) 내부에 점 마크가 끼는 조합은 아직 처리하지
+    못하며 :class:`UnsupportedMarkCombination` 을 던진다 (다음 단계 표식 폴백 대상).
+    """
+    from .equation import build_equation  # lazy: 수식 없는 변환은 미임포트
+
+    n = len(text)
+    inline = list(inline_marks or [])
+
+    def _clamp(x: Any) -> int:
+        return max(0, min(int(x), n))
+
+    points: list[tuple[int, str, dict[str, Any]]] = []
+    for m in foot_marks or []:
+        points.append((_clamp(m["offset"]), "footnote", m))
+    for m in eq_marks or []:
+        points.append((_clamp(m["offset"]), "equation", m))
+    for m in cite_marks or []:
+        points.append((_clamp(m["offset"]), "citation", m))
+
+    bounds = {0, n}
+    for m in inline:
+        bounds.add(_clamp(m["start"]))
+        bounds.add(_clamp(m["end"]))
+    for off, _, _ in points:
+        bounds.add(off)
+    sorted_bounds = sorted(bounds)
+
+    _order = {"footnote": 0, "equation": 1, "citation": 2}
+    points_at: dict[int, list[tuple[str, dict[str, Any]]]] = {}
+    for off, typ, m in sorted(points, key=lambda x: (x[0], _order[x[1]])):
+        points_at.setdefault(off, []).append((typ, m))
+
+    runs: list[etree._Element] = []
+    state: dict[str, Any] = {"run": None, "charpr": None}
+
+    def ensure_run(charpr: str) -> etree._Element:
+        if state["run"] is None or state["charpr"] != charpr:
+            r = etree.Element(f"{_HP}run", attrib={"charPrIDRef": charpr})
+            runs.append(r)
+            state["run"] = r
+            state["charpr"] = charpr
+        return state["run"]
+
+    def reset_run() -> None:
+        state["run"] = None
+        state["charpr"] = None
+
+    def charpr_of(kinds: set[str]) -> str:
+        return resolve_charpr(kinds) if kinds else base_char_pr_id
+
+    def emit_points(off: int) -> None:
+        for typ, m in points_at.get(off, []):
+            for lm in inline:
+                if (
+                    lm["kind"] == "link"
+                    and lm.get("url")
+                    and int(lm["start"]) < off < int(lm["end"])
+                ):
+                    raise UnsupportedMarkCombination(
+                        "링크 세그먼트 내부에 각주/수식/인용 점 마크가 겹침"
+                    )
+            kinds = {
+                mm["kind"]
+                for mm in inline
+                if int(mm["start"]) <= off < int(mm["end"])
+            }
+            run = ensure_run(charpr_of(kinds))
+            if typ == "footnote":
+                ctrl = etree.SubElement(run, f"{_HP}ctrl")
+                ctrl.append(_build_footnote(m, style_map, style_table))
+            elif typ == "equation":
+                run.append(
+                    build_equation(
+                        m.get("latex", ""), bool(m.get("display", False))
+                    )
+                )
+            else:  # citation
+                t = etree.SubElement(run, f"{_HP}t")
+                t.text = m.get("formatted") or f'[@{m.get("raw", "")}]'
+
+    def emit_text(lo: int, hi: int) -> None:
+        if lo >= hi:
+            return
+        seg = text[lo:hi]
+        active = [
+            m for m in inline if int(m["start"]) <= lo and hi <= int(m["end"])
+        ]
+        link = next(
+            (m for m in active if m["kind"] == "link" and m.get("url")), None
+        )
+        if link is not None:
+            reset_run()
+            runs.extend(_make_hyperlink_runs(seg, str(link["url"])))
+            reset_run()
+            return
+        run = ensure_run(charpr_of({m["kind"] for m in active}))
+        last = run[-1] if len(run) else None
+        if last is not None and last.tag == f"{_HP}t":
+            last.text = (last.text or "") + seg
+        else:
+            t = etree.SubElement(run, f"{_HP}t")
+            t.text = seg
+
+    for idx, b in enumerate(sorted_bounds):
+        emit_points(b)
+        if idx < len(sorted_bounds) - 1:
+            emit_text(b, sorted_bounds[idx + 1])
+    return runs
 
 
 def _make_run_with_equations(
