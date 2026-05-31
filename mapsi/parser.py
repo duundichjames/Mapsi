@@ -751,7 +751,8 @@ def _inline_to_text_and_marks(
     citation_marks: list[dict[str, Any]] = []
     open_stack: list[tuple[str, int, dict[str, Any] | None]] = []
     cursor = 0
-    for child in inline_tok.children:
+    children = inline_tok.children
+    for idx, child in enumerate(children):
         ctype = child.type
         if ctype == "text":
             segs, cite_segs = _split_citations(child.content)
@@ -796,6 +797,19 @@ def _inline_to_text_and_marks(
                         )
                     break
         elif ctype == "code_inline":
+            nxt = children[idx + 1] if idx + 1 < len(children) else None
+            if (
+                child.content
+                and nxt is not None
+                and nxt.type == "text"
+                and (nxt.content or "").startswith("{=html}")
+            ):
+                # Pandoc raw HTML 인라인 (`<!-- 주석 -->`{=html}, <img/>{=html}):
+                # code_inline 내용은 평문에 넣지 않고 버린다. 직후 text 에서는
+                # {=html} 접두만 제거하고 나머지 평문은 다음 반복에서 정상 처리.
+                # code_inline 을 건너뛰므로 cursor(offset) 도 증가하지 않는다.
+                nxt.content = (nxt.content or "")[len("{=html}"):]
+                continue
             content = child.content or ""
             if content:
                 start = cursor

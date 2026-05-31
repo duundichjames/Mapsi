@@ -1041,3 +1041,34 @@ class TestBackslashMath:
         # 인라인(달러 a, 브래킷 b)은 display=False, 나머지는 display=True
         displays = [m["display"] for m in marks]
         assert displays == [False, False, True, True, True]
+
+
+class TestRawHtmlInline:
+    r"""Pandoc raw HTML 인라인(`<!-- -->`{=html}, <img/>{=html}) 무시."""
+
+    def test_html_comment_inline_removed_keeps_trailing(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, "`<!-- 숨은 주석 -->`{=html} 뒤 본문.\n")
+        blk = parse_markdown(md)[0]
+        assert blk.text == " 뒤 본문."  # 주석+{=html} 제거, 뒤 본문 유지
+        assert not blk.meta.get("inline_marks")  # code 서식 마크 없음
+
+    def test_html_img_inline_removed(self, tmp_path: Path) -> None:
+        md = _write(tmp_path, '`<img src="경로.png" />`{=html} 그림 뒤.\n')
+        blk = parse_markdown(md)[0]
+        assert blk.text == " 그림 뒤."
+        assert not blk.meta.get("inline_marks")
+
+    def test_html_marker_alone_removed(self, tmp_path: Path) -> None:
+        # R Markdown 식: 코드스팬 직후 {=html} 단독 토큰
+        md = _write(tmp_path, "문장 끝.`<!-- 메모 -->`{=html}\n")
+        blk = parse_markdown(md)[0]
+        assert blk.text == "문장 끝."
+        assert not blk.meta.get("inline_marks")
+
+    def test_real_inline_code_unaffected(self, tmp_path: Path) -> None:
+        # 진짜 인라인 코드(뒤에 {=html} 없음)는 그대로 + code 서식 마크
+        md = _write(tmp_path, "앞 `code` 뒤.\n")
+        blk = parse_markdown(md)[0]
+        assert blk.text == "앞 code 뒤."
+        marks = blk.meta.get("inline_marks")
+        assert marks == [{"kind": "code", "start": 2, "end": 6}]
