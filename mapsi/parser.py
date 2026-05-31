@@ -304,6 +304,16 @@ def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
 
         if tok.type == "paragraph_open":
             inline = tokens[i + 1]
+            if (
+                blockquote_depth == 0
+                and not list_stack
+                and _is_csl_bib_open(inline)
+            ):
+                # CSL 참고문헌 블록을 figure/잔재 처리보다 먼저 소비한다.
+                ref_blocks, consumed = _consume_csl_bibliography(tokens, i)
+                blocks.extend(ref_blocks)
+                i += consumed
+                continue
             html_figure = _extract_html_figure(inline)
             if html_figure is not None and blockquote_depth == 0 and not list_stack:
                 src, alt = html_figure
@@ -671,6 +681,133 @@ def _first_inline_in_item(
             return _inline_to_text_and_marks(t)
         j += 1
     return "", [], [], [], []
+
+
+# ---------------------------------------------------------------------------
+# CSL 참고문헌 블록 (Pandoc 의 ``::::::: {#refs ...}`` 중첩 fenced div)
+# ---------------------------------------------------------------------------
+
+_CSL_BIB_OPEN_RE = re.compile(r"""^(?P<colons>:::+)\s*\{[^}]*(?:#refs\b|\.csl-bib-body\b)""")
+"""바깥 참고문헌 div 여는 마커 식별. ``::::::: {#refs ...}`` /
+``::: {.csl-bib-body}`` 형태. ``colons`` 그룹으로 바깥 콜론 개수를 잡아 바깥
+닫는 마커(같은 개수의 콜론) 와 항목 닫는 ``:::`` 를 구분한다.
+"""
+
+_CSL_ENTRY_OPEN_RE = re.compile(r"""^:::+\s*\{[^}]*(?:#ref-[\w:.\-]+\b|\.csl-entry\b)""")
+"""항목 div 여는 마커 식별. ``::: {#ref-키 .csl-entry}``."""
+
+_COLONS_ONLY_RE = re.compile(r"^:::+$")
+"""콜론만으로 이루어진 닫는 마커 (항목 닫기 ``:::`` 또는 바깥 닫기 ``:::::::``)."""
+
+
+def _is_csl_bib_open(inline_tok: Token) -> bool:
+    """inline 의 첫 ``text`` 자식이 CSL 참고문헌 바깥 여는 마커인지 판정한다."""
+    if inline_tok.type != "inline" or not inline_tok.children:
+        return False
+    first = inline_tok.children[0]
+    return first.type == "text" and bool(_CSL_BIB_OPEN_RE.match(first.content or ""))
+
+
+def _strip_and_shift(
+    text: str, marks: list[dict[str, Any]]
+) -> tuple[str, list[dict[str, Any]]]:
+    """앞뒤 공백을 떼고 inline_marks 의 start/end offset 을 그에 맞춰 보정한다.
+
+    선행 공백 제거분(``lead``) 만큼 모든 마크를 왼쪽으로 민 뒤, 정제된 텍스트
+    범위 ``[0, len]`` 로 클램프한다. 범위를 벗어나거나 비게 되는 마크는 버린다.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return "", []
+    lead = len(text) - len(text.lstrip())
+    limit = len(stripped)
+    out: list[dict[str, Any]] = []
+    for m in marks:
+        start = max(0, m["start"] - lead)
+        end = min(limit, m["end"] - lead)
+        if end > start:
+            out.append({**m, "start": start, "end": end})
+    return stripped, out
+
+
+def _consume_csl_bibliography(
+    tokens: list[Token], open_idx: int
+) -> tuple[list[Block], int]:
+    """CSL 참고문헌 블록을 ``role="reference"`` Block 리스트로 변환한다.
+
+    ``open_idx`` 의 ``paragraph_open`` 부터 시작해, 바깥 닫는 마커(여는 것과 같은
+    개수의 콜론) 가 든 paragraph 까지 연속 paragraph 들을 소비한다. 항목은 빈 줄로
+    여러 paragraph 에 흩어질 수 있으므로, 모든 paragraph 의 inline 자식을 한 줄로
+    이어 붙인 뒤(문단 경계는 softbreak=공백) ``::: {#ref-…}`` ~ ``:::`` 사이를 한
+    항목으로 잘라낸다. 각 항목은 합성 inline 토큰으로 :func:`_inline_to_text_and_marks`
+    에 넘겨 평문 + inline_marks 를 *항목 기준 offset* 으로 새로 계산한다 (이탤릭
+    저널명 보존, URL 은 평문). 마커 text 자식은 본문에서 제외된다.
+
+    Returns
+    -------
+    (blocks, consumed)
+        ``blocks`` 는 항목 순서대로의 ``role="reference"`` Block.
+        ``consumed`` 는 소비한 토큰 수 (paragraph 당 3 개).
+    """
+    n = len(tokens)
+    first_inline = tokens[open_idx + 1]
+    m = _CSL_BIB_OPEN_RE.match(first_inline.children[0].content or "")
+    outer_colons = len(m.group("colons")) if m else 3
+
+    all_children: list[Token] = []
+    sep = Token("softbreak", "", 0)
+    j = open_idx
+    consumed = 0
+    while j < n and tokens[j].type == "paragraph_open":
+        inline = tokens[j + 1]
+        kids = inline.children or []
+        if all_children:
+            all_children.append(sep)  # 문단 경계 → 공백
+        all_children.extend(kids)
+        consumed += 3
+        # 이 문단에 바깥 닫는 마커(콜론 개수 == 바깥 개수) 가 있으면 블록 종료.
+        closed = any(
+            k.type == "text"
+            and _COLONS_ONLY_RE.match(k.content or "")
+            and len((k.content or "").strip()) >= outer_colons
+            for k in kids
+        )
+        j += 3
+        if closed:
+            break
+
+    blocks: list[Block] = []
+    current: list[Token] | None = None
+    for child in all_children:
+        if child.type == "text":
+            content = child.content or ""
+            if _CSL_ENTRY_OPEN_RE.match(content):
+                current = []  # 새 항목 시작
+                continue
+            if _COLONS_ONLY_RE.match(content.strip()):
+                if current is not None:  # 항목 닫기 (바깥 닫기는 current=None 이라 무시)
+                    blocks.append(_build_reference_block(current))
+                    current = None
+                continue
+            if _CSL_BIB_OPEN_RE.match(content):
+                continue  # 바깥 여는 마커 스킵
+        if current is not None:
+            current.append(child)
+    if current is not None:  # 닫는 마커 없이 끝난 항목 방어
+        blocks.append(_build_reference_block(current))
+    return blocks, consumed
+
+
+def _build_reference_block(children: list[Token]) -> Block:
+    """항목 children 으로 ``role="reference"`` Block 1 개를 만든다."""
+    synthetic = Token("inline", "", 0)
+    synthetic.children = children
+    text, _foot, _eq, inline_marks, _cite = _inline_to_text_and_marks(synthetic)
+    text, inline_marks = _strip_and_shift(text, inline_marks)
+    meta: dict[str, Any] = {}
+    if inline_marks:
+        meta["inline_marks"] = inline_marks
+    return Block(role="reference", depth=0, text=text, meta=meta)
 
 
 # ---------------------------------------------------------------------------
