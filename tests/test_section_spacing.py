@@ -108,3 +108,48 @@ def test_title_style_is_24pt_centered(tmp_path: Path, style_map) -> None:
     para44 = next(p for p in hdr.iter(f"{HH}paraPr") if p.get("id") == "44")
     assert char23.get("height") == "2400"  # 24pt
     assert para44.find(f"{HH}align").get("horizontal") == "CENTER"
+
+
+# ---------------------------------------------------------------------------
+# 참고문헌 제목 (CSL 블록 앞 빈 줄 + "참고문헌" 제목, 번호 없는 새 스타일)
+# ---------------------------------------------------------------------------
+
+
+_CSL_MD = (
+    "서론 문단.\n\n"
+    "::::::: {#refs .references .csl-bib-body .hanging-indent}\n"
+    "::: {#ref-a .csl-entry}\n"
+    "Athey, S. 2019. *The Annals of Statistics* 47 (2).\n"
+    ":::\n\n"
+    "::: {#ref-b .csl-entry}\n"
+    "Chernozhukov, V. 2018. *The Econometrics Journal* 21 (1).\n"
+    ":::\n"
+    ":::::::\n"
+)
+
+
+def test_bib_heading_prepended_before_references(tmp_path: Path, style_map) -> None:
+    """참고문헌 항목들 앞에 빈 줄 + "참고문헌" 제목이 순서대로 들어간다."""
+    seq = extract_paragraph_sequence(_convert(tmp_path, style_map, _CSL_MD))
+    titles = [p for p in seq if p.text == "참고문헌"]
+    assert len(titles) == 1
+    idx = seq.index(titles[0])
+    # 제목 직전은 빈 본문 단락(삽입형), 직후는 참고문헌 항목.
+    assert _is_blank(seq[idx - 1]), "참고문헌 제목 앞에 빈 줄이 없다"
+    assert seq[idx + 1].style_name == "참고문헌"
+    assert seq[idx + 1].text.startswith("Athey")
+
+
+def test_bib_heading_uses_no_number_style(tmp_path: Path, style_map) -> None:
+    """제목 "참고문헌" 은 참고문헌제목 스타일이며 자동 번호가 없다."""
+    out = _convert(tmp_path, style_map, _CSL_MD)
+    seq = extract_paragraph_sequence(out)
+    title = next(p for p in seq if p.text == "참고문헌")
+    assert title.style_name == "참고문헌제목"
+    # 해당 스타일의 charPr 는 개요 1(charPr 12) 과 동일, paraPr heading 은 NONE.
+    with zipfile.ZipFile(out) as z:
+        hdr = etree.fromstring(z.read("Contents/header.xml"))
+    st = next(s for s in hdr.iter(f"{HH}style") if s.get("name") == "참고문헌제목")
+    assert st.get("charPrIDRef") == "12"  # 개요 1 글씨체 재사용
+    pp = next(p for p in hdr.iter(f"{HH}paraPr") if p.get("id") == st.get("paraPrIDRef"))
+    assert pp.find(f"{HH}heading").get("type") == "NONE"  # 번호 없음
