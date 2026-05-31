@@ -90,6 +90,43 @@ def test_unsupported_token_raises_not_implemented(tmp_path: Path) -> None:
         parse_markdown(md)
 
 
+def test_html_comment_block_is_skipped(tmp_path: Path) -> None:
+    """HTML 주석(html_block)은 예외 없이 건너뛰고 결과에 포함되지 않는다."""
+    md = _write(tmp_path, "앞 문단.\n\n<!-- 숨은 주석 -->\n\n뒤 문단.\n")
+    blocks = parse_markdown(md)
+    assert [(b.role, b.text) for b in blocks] == [
+        ("paragraph", "앞 문단."),
+        ("paragraph", "뒤 문단."),
+    ]
+    assert all("숨은 주석" not in b.text for b in blocks)
+
+
+def test_html_caption_block_is_skipped(tmp_path: Path) -> None:
+    """``<p class="caption">`` 같은 HTML 블록도 건너뛴다 (R Markdown 산출물)."""
+    md = _write(
+        tmp_path,
+        '앞.\n\n<p class="caption">\nRFM 점수의 3차원 결합 분포\n</p>\n\n뒤.\n',
+    )
+    blocks = parse_markdown(md)
+    assert [b.text for b in blocks] == ["앞.", "뒤."]
+    assert all("caption" not in b.text for b in blocks)
+
+
+def test_html_block_does_not_raise(tmp_path: Path) -> None:
+    """html_block 이 여럿 섞여도 변환이 중단되지 않는다 (미지원 예외 없음)."""
+    md = _write(
+        tmp_path,
+        "<!-- c1 -->\n\n# 제목\n\n<!-- c2 -->\n\n본문.\n\n"
+        '<p class="caption">cap</p>\n\n끝 문단.\n',
+    )
+    blocks = parse_markdown(md)  # 예외가 나면 테스트 실패
+    assert [(b.role, b.text) for b in blocks] == [
+        ("heading", "제목"),
+        ("paragraph", "본문."),
+        ("paragraph", "끝 문단."),
+    ]
+
+
 def test_blockquote_single_paragraph(tmp_path: Path) -> None:
     md = _write(tmp_path, "> 인용 한 줄.\n")
     blocks = parse_markdown(md)
