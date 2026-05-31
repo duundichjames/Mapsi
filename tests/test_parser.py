@@ -293,6 +293,34 @@ def test_image_with_empty_alt(tmp_path: Path) -> None:
     ]
 
 
+def test_korean_image_path_is_decoded(tmp_path: Path) -> None:
+    """한글 경로 이미지는 퍼센트 인코딩을 디코드해 실제 경로로 저장된다.
+
+    markdown-it 이 `한글폴더/한글그림.png` 를 `%EA...` 로 인코딩하는데,
+    parser 가 unquote 해 사람이 읽는 경로로 되돌린다 (파일 조회 일관성).
+    """
+    md = _write(tmp_path, "![캡션](한글폴더/한글그림.png)\n")
+    blk = parse_markdown(md)[0]
+    assert blk.role == "figure"
+    assert blk.meta["src"] == "한글폴더/한글그림.png"
+    assert "%" not in blk.meta["src"]
+
+
+def test_space_image_path_is_decoded(tmp_path: Path) -> None:
+    """공백 포함 경로(%20)도 디코드되어 공백으로 복원된다."""
+    md = _write(tmp_path, "![alt](<my dir/my image.png>)\n")
+    blk = parse_markdown(md)[0]
+    assert blk.role == "figure"
+    assert blk.meta["src"] == "my dir/my image.png"
+
+
+def test_ascii_image_path_unchanged(tmp_path: Path) -> None:
+    """% 없는 ASCII·상대 경로는 unquote 영향을 받지 않는다 (무영향 확인)."""
+    md = _write(tmp_path, "![alt](../../assets/sample_figure.png)\n")
+    blk = parse_markdown(md)[0]
+    assert blk.meta["src"] == "../../assets/sample_figure.png"
+
+
 def test_image_mixed_with_text_falls_back_to_paragraph(tmp_path: Path) -> None:
     """그림과 텍스트가 한 단락에 섞여 있으면 figure 가 아닌 paragraph 로 본다.
 

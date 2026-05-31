@@ -74,6 +74,7 @@ Pandoc 각주 활성화: ``mdit_py_plugins.footnote.footnote_plugin`` 을 use
 from __future__ import annotations
 
 import re
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -659,7 +660,10 @@ def _extract_solo_figure(inline_tok: Token) -> tuple[str, str] | None:
     child = inline_tok.children[0]
     if child.type != "image":
         return None
-    src = (child.attrs.get("src") or "").strip()
+    # markdown-it 이 퍼센트 인코딩한 src 를 사람이 읽는 실제 경로로 디코드한다.
+    # (한글/공백 경로 복원. % 없는 ASCII·상대 경로에는 무영향, 왕복 안전.)
+    # 이렇게 해야 파일 조회·image_map 키·누락 보고가 모두 디코드된 경로로 일관된다.
+    src = urllib.parse.unquote((child.attrs.get("src") or "").strip())
     if not src:
         return None
     alt_parts: list[str] = []
