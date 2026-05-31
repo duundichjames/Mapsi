@@ -59,4 +59,6 @@ figure_caption: 그림캡션
 # 각주 / 참고문헌 / 메모
 footnote: 각주
 reference: 참고문헌
+# CSL 참고문헌 블록 위의 "참고문헌" 제목. 개요 1 글씨체에 번호 없음(새 스타일).
+bib_heading: 참고문헌제목
 memo: 메모

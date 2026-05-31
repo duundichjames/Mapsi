@@ -795,6 +795,13 @@ def _consume_csl_bibliography(
             current.append(child)
     if current is not None:  # 닫는 마커 없이 끝난 항목 방어
         blocks.append(_build_reference_block(current))
+    # 참고문헌 항목이 하나라도 있으면 앞에 빈 줄 + "참고문헌" 제목을 단다.
+    # 제목은 번호 없는 개요 1 글씨체(role="bib_heading" → 참고문헌제목 스타일).
+    if blocks:
+        blocks = [
+            Block(role="paragraph", text=""),
+            Block(role="bib_heading", text="참고문헌"),
+        ] + blocks
     return blocks, consumed
 
 

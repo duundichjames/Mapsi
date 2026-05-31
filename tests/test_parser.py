@@ -508,10 +508,19 @@ _CSL_BLOCK = (
 
 
 def test_csl_bibliography_emits_reference_blocks(tmp_path: Path) -> None:
-    """CSL 참고문헌 블록의 각 항목이 ``role='reference'`` Block 으로 변환된다."""
+    """CSL 참고문헌 블록 = 빈 줄 + "참고문헌" 제목 + 각 항목(reference)."""
     blocks = parse_markdown(_write(tmp_path, _CSL_BLOCK))
-    assert [b.role for b in blocks] == ["reference", "reference"]
-    assert all(b.depth == 0 for b in blocks)
+    assert [b.role for b in blocks] == [
+        "paragraph",
+        "bib_heading",
+        "reference",
+        "reference",
+    ]
+    # 맨 앞 빈 줄, 그다음 "참고문헌" 제목.
+    assert blocks[0].text == ""
+    assert blocks[1].text == "참고문헌"
+    # 항목들은 depth 0.
+    assert all(b.depth == 0 for b in blocks if b.role == "reference")
 
 
 def test_csl_markers_are_stripped(tmp_path: Path) -> None:
@@ -521,24 +530,27 @@ def test_csl_markers_are_stripped(tmp_path: Path) -> None:
         assert ":::" not in blk.text
         assert "#ref" not in blk.text
         assert "csl-entry" not in blk.text
-    assert blocks[0].text.startswith("Athey, Susan")
-    assert blocks[0].text.endswith("https://doi.org/10.1214/18-AOS1709.")
+    refs = [b for b in blocks if b.role == "reference"]
+    assert refs[0].text.startswith("Athey, Susan")
+    assert refs[0].text.endswith("https://doi.org/10.1214/18-AOS1709.")
 
 
 def test_csl_italic_preserved_with_recomputed_offset(tmp_path: Path) -> None:
     """이탤릭 저널명이 항목 기준 offset 으로 보존된다 (마커 제거 후 재계산)."""
     blocks = parse_markdown(_write(tmp_path, _CSL_BLOCK))
-    marks = blocks[0].meta["inline_marks"]
+    ref0 = next(b for b in blocks if b.role == "reference")
+    marks = ref0.meta["inline_marks"]
     italics = [m for m in marks if m["kind"] == "italic"]
     assert len(italics) == 1
     m = italics[0]
-    assert blocks[0].text[m["start"] : m["end"]] == "The Annals of Statistics"
+    assert ref0.text[m["start"] : m["end"]] == "The Annals of Statistics"
 
 
 def test_csl_url_preserved_as_plain_text(tmp_path: Path) -> None:
     """URL(<...>) 의 문자열이 평문으로 보존된다."""
     blocks = parse_markdown(_write(tmp_path, _CSL_BLOCK))
-    assert "https://doi.org/10.1214/18-AOS1709" in blocks[0].text
+    ref0 = next(b for b in blocks if b.role == "reference")
+    assert "https://doi.org/10.1214/18-AOS1709" in ref0.text
 
 
 def test_csl_bib_body_only_form_is_recognized(tmp_path: Path) -> None:
@@ -551,8 +563,9 @@ def test_csl_bib_body_only_form_is_recognized(tmp_path: Path) -> None:
         ":::\n"
     )
     blocks = parse_markdown(_write(tmp_path, md))
-    assert [b.role for b in blocks] == ["reference"]
-    assert blocks[0].text == "Doe, Jane. 2020. Title."
+    assert [b.role for b in blocks] == ["paragraph", "bib_heading", "reference"]
+    refs = [b for b in blocks if b.role == "reference"]
+    assert refs[0].text == "Doe, Jane. 2020. Title."
 
 
 def test_non_csl_div_is_not_reference(tmp_path: Path) -> None:
