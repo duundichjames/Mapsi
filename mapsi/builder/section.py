@@ -124,20 +124,27 @@ def build_section(
     # emit 된 뒤의 헤딩 앞에만 빈 줄을 넣는다.
     front_matter_roles = {"doc_title", "doc_author", "doc_date"}
     seen_content = False
+    prev_role: str | None = None  # 직전에 emit 한 블록의 역할
     for block in blocks:
         # 의도된 미지원(UnsupportedFeature) 만 잡아 그 블록을 표식 단락으로
         # 대체하고 계속한다. 그 밖의 예외(KeyError·ValueError·파서의 일반
         # NotImplementedError 등) 는 전파해 실제 버그가 드러나게 한다.
         # 상위 타입 NotImplementedError 가 아니라 UnsupportedFeature 만 잡는다.
         try:
-            # 항목 2 — 헤딩 앞 빈 줄 (단, 문서 첫 헤딩 앞에는 넣지 않음).
-            if block.role == "heading" and seen_content:
+            # 헤딩 앞 빈 줄 — 단, 문서 첫 헤딩이거나 직전도 헤딩이면 넣지 않는다
+            # (개요-개요 연속 시 사이 빈 줄 제거).
+            if block.role == "heading" and seen_content and prev_role != "heading":
                 new_root.append(_build_blank_paragraph(style_map, style_table))
             if block.role == "table":
+                # 표(캡션 포함) 앞 빈 줄 — 본문과 표 구분. 문서 맨 처음이거나
+                # 직전이 헤딩이면 생략. 캡션은 wrapper 내부에 들어가므로 wrapper
+                # 앞에 넣으면 캡션 바로 앞에 온다.
+                if seen_content and prev_role != "heading":
+                    new_root.append(_build_blank_paragraph(style_map, style_table))
                 new_root.append(
                     build_table_wrapper(block, style_map, style_table)
                 )
-                # 항목 1 — 표 뒤 빈 줄 (표와 다음 서술 사이 간격).
+                # 표 뒤 빈 줄 (표와 다음 서술 사이 간격).
                 new_root.append(_build_blank_paragraph(style_map, style_table))
             elif block.role == "figure":
                 src = block.meta.get("src") if block.meta else None
@@ -166,6 +173,7 @@ def build_section(
             )
         if block.role not in front_matter_roles:
             seen_content = True
+        prev_role = block.role
 
     return etree.tostring(
         new_root,
