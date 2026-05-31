@@ -45,10 +45,12 @@ from lxml import etree
 
 from ..parser import Block
 from .elements import (
+    UnsupportedFeature,
     build_figure_caption_paragraph,
     build_figure_paragraph,
     build_paragraph,
     build_table_wrapper,
+    build_unsupported_marker,
 )
 from .header import StyleEntry
 
@@ -117,27 +119,40 @@ def build_section(
     #                placeholder 모드 (그림 단락 + 별도 그림캡션 단락).
     #      - 그 외:  단순 hp:p 1 개로 매핑
     for block in blocks:
-        if block.role == "table":
-            new_root.append(build_table_wrapper(block, style_map, style_table))
-        elif block.role == "figure":
-            src = block.meta.get("src") if block.meta else None
-            image_info = image_map.get(src) if src else None
-            new_root.append(
-                build_figure_paragraph(
-                    block, style_map, style_table, image_info=image_info
-                )
-            )
-            # placeholder 모드에서만 별도 캡션 단락 추가 (Phase 6a 호환).
-            # hp:pic 모드에서는 캡션이 hp:pic 내부로 들어갔으므로 중복 emit 금지.
-            caption = block.meta.get("caption")
-            if image_info is None and caption:
+        # 의도된 미지원(UnsupportedFeature) 만 잡아 그 블록을 표식 단락으로
+        # 대체하고 계속한다. 그 밖의 예외(KeyError·ValueError·파서의 일반
+        # NotImplementedError 등) 는 전파해 실제 버그가 드러나게 한다.
+        # 상위 타입 NotImplementedError 가 아니라 UnsupportedFeature 만 잡는다.
+        try:
+            if block.role == "table":
                 new_root.append(
-                    build_figure_caption_paragraph(
-                        str(caption), style_map, style_table
+                    build_table_wrapper(block, style_map, style_table)
+                )
+            elif block.role == "figure":
+                src = block.meta.get("src") if block.meta else None
+                image_info = image_map.get(src) if src else None
+                new_root.append(
+                    build_figure_paragraph(
+                        block, style_map, style_table, image_info=image_info
                     )
                 )
-        else:
-            new_root.append(build_paragraph(block, style_map, style_table))
+                # placeholder 모드에서만 별도 캡션 단락 추가 (Phase 6a 호환).
+                # hp:pic 모드에서는 캡션이 hp:pic 내부로 들어갔으므로 중복 금지.
+                caption = block.meta.get("caption")
+                if image_info is None and caption:
+                    new_root.append(
+                        build_figure_caption_paragraph(
+                            str(caption), style_map, style_table
+                        )
+                    )
+            else:
+                new_root.append(
+                    build_paragraph(block, style_map, style_table)
+                )
+        except UnsupportedFeature:
+            new_root.append(
+                build_unsupported_marker(block.text, style_map, style_table)
+            )
 
     return etree.tostring(
         new_root,
