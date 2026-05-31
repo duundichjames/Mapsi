@@ -86,6 +86,10 @@ __all__ = [
     "build_figure_caption_paragraph",
     "build_picture",
     "build_footnote_ref",
+    "build_unsupported_marker",
+    "UNSUPPORTED_MARKER_PREFIX",
+    "UnsupportedFeature",
+    "UnsupportedMarkCombination",
 ]
 
 
@@ -209,6 +213,31 @@ def build_paragraph(
     else:
         p.append(_make_text_run(block.text, entry.char_pr_id))
     return p
+
+
+# 미처리 표식의 고정 검색 접두어. 사용자는 한/글에서 이 문자열로 검색해
+# 모든 미처리 지점을 찾는다. 형식: 〔MAPSI 미처리: <원문>〕
+UNSUPPORTED_MARKER_PREFIX = "〔MAPSI 미처리"
+
+
+def build_unsupported_marker(
+    original_text: str,
+    style_map: dict[str, Any],
+    style_table: dict[str, StyleEntry],
+) -> etree._Element:
+    """미처리 블록을 대체할 표식 단락(``hp:p``, 본문 스타일) 을 만든다.
+
+    원문 텍스트를 ``〔MAPSI 미처리: <원문>〕`` 로 감싸 본문 스타일 평문 단락에
+    담는다. lxml 이 ``< > &`` 를 자동 이스케이프하므로 원문에 특수문자가
+    있어도 ``hp:t`` 에서 안전하다. 사용자는 한/글에서
+    :data:`UNSUPPORTED_MARKER_PREFIX` 로 검색해 찾고 원문을 보며 수동 보완한다.
+
+    표식 생성은 이 헬퍼 한 곳에 모아, 향후 다른 미지원 상황(그림 div 등)도
+    동일한 표식을 재사용하게 한다.
+    """
+    marker_text = f"{UNSUPPORTED_MARKER_PREFIX}: {original_text}〕"
+    block = Block(role="paragraph", text=marker_text)
+    return build_paragraph(block, style_map, style_table)
 
 
 def _make_runs_with_inline_marks(
@@ -476,11 +505,22 @@ def _make_run_with_citations(
     return run
 
 
-class UnsupportedMarkCombination(NotImplementedError):
+class UnsupportedFeature(NotImplementedError):
+    """Mapsi 가 **의도적으로** 아직 처리하지 못하는 기능 (미지원) 의 베이스 예외.
+
+    실제 코드 버그(다른 예외 타입) 와 구분하기 위한 표식 폴백 전용 베이스.
+    ``build_section`` 은 이 타입(과 하위) 만 잡아 해당 블록을 표식 단락으로
+    대체하고 변환을 계속한다. 앞으로 생기는 의도된 미지원 상황은 모두 이
+    예외(또는 하위) 로 던지면 동일하게 표식 처리된다. **상위 타입
+    ``NotImplementedError`` 로 잡으면 안 된다** (파서의 미지원 토큰 등 다른
+    NotImplementedError 까지 삼키기 때문).
+    """
+
+
+class UnsupportedMarkCombination(UnsupportedFeature):
     """통합 빌더가 아직 처리하지 못하는 마크 조합 (의도적 미지원).
 
-    실제 코드 버그(다른 예외) 와 구분하기 위한 전용 예외. 후속 단계의 표식
-    폴백은 이 예외만 잡아 단락을 표식으로 대체하고 변환을 계속한다.
+    예: 링크 세그먼트 내부에 각주/수식/인용 점 마크가 겹치는 경우.
     """
 
 
