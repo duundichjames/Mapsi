@@ -488,6 +488,93 @@ def test_figure_div_without_img_is_not_figure(tmp_path: Path) -> None:
     assert all(b.role != "figure" for b in blocks)
 
 
+# ---------------------------------------------------------------------------
+# CSL 참고문헌 블록 (``::::::: {#refs ...}`` 중첩 fenced div)
+# ---------------------------------------------------------------------------
+
+_CSL_BLOCK = (
+    "::::::: {#refs .references .csl-bib-body .hanging-indent}\n"
+    "::: {#ref-athey2019generalized .csl-entry}\n"
+    "Athey, Susan, Julie Tibshirani, and Stefan Wager. 2019. \"Generalized\n"
+    "Random Forests.\" *The Annals of Statistics* 47 (2): 1148--78.\n"
+    "<https://doi.org/10.1214/18-AOS1709>.\n"
+    ":::\n"
+    "\n"
+    "::: {#ref-chernozhukov2018double .csl-entry}\n"
+    "Chernozhukov, Victor. 2018. \"Double ML.\" *The Econometrics Journal* 21 (1).\n"
+    ":::\n"
+    ":::::::\n"
+)
+
+
+def test_csl_bibliography_emits_reference_blocks(tmp_path: Path) -> None:
+    """CSL 참고문헌 블록의 각 항목이 ``role='reference'`` Block 으로 변환된다."""
+    blocks = parse_markdown(_write(tmp_path, _CSL_BLOCK))
+    assert [b.role for b in blocks] == ["reference", "reference"]
+    assert all(b.depth == 0 for b in blocks)
+
+
+def test_csl_markers_are_stripped(tmp_path: Path) -> None:
+    """본문에서 ``:::`` / ``{#ref-...}`` 마커가 모두 제거된다."""
+    blocks = parse_markdown(_write(tmp_path, _CSL_BLOCK))
+    for blk in blocks:
+        assert ":::" not in blk.text
+        assert "#ref" not in blk.text
+        assert "csl-entry" not in blk.text
+    assert blocks[0].text.startswith("Athey, Susan")
+    assert blocks[0].text.endswith("https://doi.org/10.1214/18-AOS1709.")
+
+
+def test_csl_italic_preserved_with_recomputed_offset(tmp_path: Path) -> None:
+    """이탤릭 저널명이 항목 기준 offset 으로 보존된다 (마커 제거 후 재계산)."""
+    blocks = parse_markdown(_write(tmp_path, _CSL_BLOCK))
+    marks = blocks[0].meta["inline_marks"]
+    italics = [m for m in marks if m["kind"] == "italic"]
+    assert len(italics) == 1
+    m = italics[0]
+    assert blocks[0].text[m["start"] : m["end"]] == "The Annals of Statistics"
+
+
+def test_csl_url_preserved_as_plain_text(tmp_path: Path) -> None:
+    """URL(<...>) 의 문자열이 평문으로 보존된다."""
+    blocks = parse_markdown(_write(tmp_path, _CSL_BLOCK))
+    assert "https://doi.org/10.1214/18-AOS1709" in blocks[0].text
+
+
+def test_csl_bib_body_only_form_is_recognized(tmp_path: Path) -> None:
+    """``#refs`` 없이 ``.csl-bib-body`` 만 있어도 인식한다."""
+    md = (
+        "::: {.csl-bib-body}\n"
+        "::: {#ref-x .csl-entry}\n"
+        "Doe, Jane. 2020. *Title*.\n"
+        ":::\n"
+        ":::\n"
+    )
+    blocks = parse_markdown(_write(tmp_path, md))
+    assert [b.role for b in blocks] == ["reference"]
+    assert blocks[0].text == "Doe, Jane. 2020. Title."
+
+
+def test_non_csl_div_is_not_reference(tmp_path: Path) -> None:
+    """``.note`` 등 일반 fenced div 는 참고문헌으로 변환되지 않는다."""
+    md = "::: {.note}\n일반 노트 내용.\n:::\n"
+    blocks = parse_markdown(_write(tmp_path, md))
+    assert all(b.role != "reference" for b in blocks)
+
+
+def test_figure_div_is_not_reference(tmp_path: Path) -> None:
+    """figure div(.figure + img) 는 참고문헌이 아니라 figure 로 남는다."""
+    md = (
+        "::: {.figure}\n"
+        '`<img src="x/y.png" alt="cap" />`{=html}\n'
+        '<p class="caption">cap</p>\n'
+        ":::\n"
+    )
+    blocks = parse_markdown(_write(tmp_path, md))
+    assert any(b.role == "figure" for b in blocks)
+    assert all(b.role != "reference" for b in blocks)
+
+
 def test_round_trip_02_bullet_list_fixture(repo_root: Path) -> None:
     """``tests/golden/02_bullet_list/input.md`` 가 의도한 6 블록을 만든다."""
     md = repo_root / "tests" / "golden" / "02_bullet_list" / "input.md"
