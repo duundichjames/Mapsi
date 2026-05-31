@@ -751,7 +751,8 @@ def _inline_to_text_and_marks(
     citation_marks: list[dict[str, Any]] = []
     open_stack: list[tuple[str, int, dict[str, Any] | None]] = []
     cursor = 0
-    for child in inline_tok.children:
+    children = inline_tok.children
+    for idx, child in enumerate(children):
         ctype = child.type
         if ctype == "text":
             segs, cite_segs = _split_citations(child.content)
@@ -760,7 +761,12 @@ def _inline_to_text_and_marks(
                 cursor += len(seg)
                 if idx < len(cite_segs):
                     citation_marks.append({**cite_segs[idx], "offset": cursor})
-        elif ctype in ("softbreak", "hardbreak"):
+        elif ctype == "softbreak":
+            # 문단 내 단일 줄바꿈(소스에서 줄을 나눈 것) → 공백.
+            parts.append(" ")
+            cursor += 1
+        elif ctype == "hardbreak":
+            # 명시적 줄바꿈(줄 끝 공백 2개 또는 백슬래시) → 줄바꿈 유지.
             parts.append("\n")
             cursor += 1
         elif ctype == "footnote_ref":
@@ -796,6 +802,19 @@ def _inline_to_text_and_marks(
                         )
                     break
         elif ctype == "code_inline":
+            nxt = children[idx + 1] if idx + 1 < len(children) else None
+            if (
+                child.content
+                and nxt is not None
+                and nxt.type == "text"
+                and (nxt.content or "").startswith("{=html}")
+            ):
+                # Pandoc raw HTML 인라인 (`<!-- 주석 -->`{=html}, <img/>{=html}):
+                # code_inline 내용은 평문에 넣지 않고 버린다. 직후 text 에서는
+                # {=html} 접두만 제거하고 나머지 평문은 다음 반복에서 정상 처리.
+                # code_inline 을 건너뛰므로 cursor(offset) 도 증가하지 않는다.
+                nxt.content = (nxt.content or "")[len("{=html}"):]
+                continue
             content = child.content or ""
             if content:
                 start = cursor
