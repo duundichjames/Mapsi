@@ -118,16 +118,27 @@ def build_section(
     #                (캡션도 그 안의 hp:caption 으로 흡수). 없으면 Phase 6a
     #                placeholder 모드 (그림 단락 + 별도 그림캡션 단락).
     #      - 그 외:  단순 hp:p 1 개로 매핑
+    # 헤딩 앞 빈 줄(항목 2) 의 "첫 헤딩 제외" 판정용. front matter 의
+    # title/author/date 는 본문 내용으로 치지 않으므로, 그 뒤 첫 헤딩 앞에는
+    # 빈 줄을 넣지 않는다. 실제 내용(본문/표/그림/헤딩 등) 이 한 번이라도
+    # emit 된 뒤의 헤딩 앞에만 빈 줄을 넣는다.
+    front_matter_roles = {"doc_title", "doc_author", "doc_date"}
+    seen_content = False
     for block in blocks:
         # 의도된 미지원(UnsupportedFeature) 만 잡아 그 블록을 표식 단락으로
         # 대체하고 계속한다. 그 밖의 예외(KeyError·ValueError·파서의 일반
         # NotImplementedError 등) 는 전파해 실제 버그가 드러나게 한다.
         # 상위 타입 NotImplementedError 가 아니라 UnsupportedFeature 만 잡는다.
         try:
+            # 항목 2 — 헤딩 앞 빈 줄 (단, 문서 첫 헤딩 앞에는 넣지 않음).
+            if block.role == "heading" and seen_content:
+                new_root.append(_build_blank_paragraph(style_map, style_table))
             if block.role == "table":
                 new_root.append(
                     build_table_wrapper(block, style_map, style_table)
                 )
+                # 항목 1 — 표 뒤 빈 줄 (표와 다음 서술 사이 간격).
+                new_root.append(_build_blank_paragraph(style_map, style_table))
             elif block.role == "figure":
                 src = block.meta.get("src") if block.meta else None
                 image_info = image_map.get(src) if src else None
@@ -153,6 +164,8 @@ def build_section(
             new_root.append(
                 build_unsupported_marker(block.text, style_map, style_table)
             )
+        if block.role not in front_matter_roles:
+            seen_content = True
 
     return etree.tostring(
         new_root,
@@ -160,6 +173,17 @@ def build_section(
         encoding="UTF-8",
         standalone=True,
     )
+
+
+def _build_blank_paragraph(
+    style_map: dict[str, Any], style_table: dict[str, StyleEntry]
+) -> etree._Element:
+    """빈 본문 단락(``hp:p``, 본문 스타일) 1 개를 만든다 — 간격용 빈 줄.
+
+    표 뒤(항목 1)·헤딩 앞(항목 2) 에 한 줄 간격을 주기 위한 빈 단락. 본문
+    스타일을 그대로 쓰며 텍스트는 비어 있다.
+    """
+    return build_paragraph(Block(role="paragraph", text=""), style_map, style_table)
 
 
 def _strip_text_content(p_element: etree._Element) -> None:
