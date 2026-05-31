@@ -108,6 +108,24 @@ FIGURE_CAPTION_PATTERN = re.compile(r"^(그림|Figure)\s+\d+\.\s*")
 """
 
 
+LATEX_ONLY_PATTERN = re.compile(r"^\s*(\\[A-Za-z@]+(\{[^{}]*\})*\s*)+$")
+"""R Markdown 산출물의 LaTeX 명령 잔재 식별 (단락 전체가 ``\\cmd{...}`` 나열).
+
+``\\begin{landscape}``, ``\\floatplacement{figure}{tbp}``, ``\\end{landscape}``
+같이 **전체가 LaTeX 명령 토큰의 나열일 때만** 매치한다. 백슬래시로 시작하는
+설명문(``\\times 는 곱셈 기호다.``) 은 ``는`` 이 ``\\`` 로 시작하지 않으므로
+매치되지 않는다 (정상 본문 보존).
+"""
+
+FENCED_DIV_PATTERN = re.compile(r"""^:::+\s*[\w.\-{}="' ]*$""")
+"""Pandoc fenced div 마커 식별 (``::: figure`` 열기 / ``:::`` 닫기).
+
+``:::`` 단독 또는 ``::: class`` 처럼 **마커만일 때만** 매치한다. ``:::`` 가
+문장 중간에 든 본문이나 마커+내용이 섞인 단락(``::: figure 내용 문단. :::``)
+은 매치되지 않는다 (정상 본문 보존).
+"""
+
+
 def walk(
     blocks: list[Block],
     *,
@@ -126,6 +144,7 @@ def walk(
         ``None`` 이면 인용 관련 규칙(5·6) 을 건너뛴다.
 
     적용 순서:
+        0) 평문 잔재 제거 (단락 전체가 LaTeX 명령/fenced div 마커면 드롭)
         1) 표 캡션 승격 (직전 단락 → 표 ``meta["caption"]``)
         2) 그림 캡션 승격 (직후 단락 → 그림 ``meta["caption"]``)
         3) 각주 본문 흡수 (footnote_def → paragraph mark["text"])
@@ -133,7 +152,8 @@ def walk(
         5) 참고문헌 목록 삽입 (bib_data 있을 때만)
         6) 참고문헌 섹션 demote (paragraph/list → reference)
     """
-    out = _promote_table_captions(blocks)
+    out = _drop_residue_paragraphs(blocks)
+    out = _promote_table_captions(out)
     out = _promote_figure_captions(out)
     out = _absorb_footnote_defs(out)
     if bib_data is not None:
@@ -143,6 +163,28 @@ def walk(
         out = _resolve_citations(out, formatter)
         out = _inject_reference_list(out, formatter)
     out = _demote_in_reference_section(out)
+    return out
+
+
+def _drop_residue_paragraphs(blocks: list[Block]) -> list[Block]:
+    """규칙 0 — 단락 전체가 LaTeX 명령 잔재이거나 fenced div 마커뿐이면 제거한다.
+
+    R Markdown(Pandoc) 산출물의 레이아웃 잔재(``\\begin{landscape}`` 등,
+    ``::: figure`` / ``:::``) 를 **표식 없이 조용히** 버린다. 엄격 패턴
+    (:data:`LATEX_ONLY_PATTERN`, :data:`FENCED_DIV_PATTERN`) 이라 백슬래시/콜론이
+    든 정상 본문, 마커와 내용이 섞인 단락은 보존한다. 마크가 없는 순수 평문
+    ``paragraph`` 만 대상으로 한다 (각주/수식/인용/서식 마크가 있으면 잔재가
+    아니므로 제외).
+    """
+    out: list[Block] = []
+    for blk in blocks:
+        if blk.role == "paragraph" and not blk.meta:
+            text = blk.text.strip()
+            if text and (
+                LATEX_ONLY_PATTERN.match(text) or FENCED_DIV_PATTERN.match(text)
+            ):
+                continue  # 잔재 단락 드롭
+        out.append(blk)
     return out
 
 

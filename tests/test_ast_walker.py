@@ -599,3 +599,41 @@ class TestReferenceSectionDemote:
         result = walk(blocks)
         assert result[0].role == "heading"
         assert result[0].depth == 1
+
+
+class TestResidueDrop:
+    """규칙 0 — 단락 전체가 LaTeX 명령/fenced div 마커면 조용히 제거."""
+
+    def test_latex_command_paragraphs_dropped(self) -> None:
+        blocks = [
+            _para("앞 본문."),
+            _para(r"\begin{landscape}"),
+            _para(r"\floatplacement{figure}{tbp}"),
+            _para(r"\end{landscape}"),
+            _para("뒤 본문."),
+        ]
+        assert [b.text for b in walk(blocks)] == ["앞 본문.", "뒤 본문."]
+
+    def test_latex_commands_joined_one_paragraph_dropped(self) -> None:
+        # 빈 줄 없이 묶인 LaTeX 명령 한 단락도 전체가 잔재면 드롭
+        blk = _para(r"\begin{landscape} \floatplacement{figure}{tbp} \end{landscape}")
+        assert walk([blk]) == []
+
+    def test_fenced_div_markers_dropped(self) -> None:
+        blocks = [_para("::: figure"), _para("실제 본문."), _para(":::")]
+        assert [b.text for b in walk(blocks)] == ["실제 본문."]
+
+    def test_normal_text_preserved(self) -> None:
+        # 백슬래시로 시작하는 설명문 / 콜론 문장 / 경로 / 마커+내용 혼합 보존
+        blocks = [
+            _para(r"\times 는 곱셈 기호다."),
+            _para("결론: 핵심입니다."),
+            _para(r"경로는 C:\Users 입니다."),
+            _para("::: figure 내용 섞임 :::"),
+        ]
+        assert [b.text for b in walk(blocks)] == [
+            r"\times 는 곱셈 기호다.",
+            "결론: 핵심입니다.",
+            r"경로는 C:\Users 입니다.",
+            "::: figure 내용 섞임 :::",
+        ]
