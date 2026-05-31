@@ -412,10 +412,11 @@ def test_round_trip_02_bullet_list_fixture(repo_root: Path) -> None:
     ]
 
 
-def test_softbreak_becomes_newline(tmp_path: Path) -> None:
+def test_softbreak_becomes_space(tmp_path: Path) -> None:
+    # 문단 내 단일 줄바꿈(softbreak)은 줄바꿈이 아니라 공백으로 이어진다.
     md = _write(tmp_path, "줄1\n줄2\n")
     blocks = parse_markdown(md)
-    assert blocks == [Block(role="paragraph", text="줄1\n줄2")]
+    assert blocks == [Block(role="paragraph", text="줄1 줄2")]
 
 
 def test_round_trip_01_headings_fixture(repo_root: Path) -> None:
@@ -1072,3 +1073,29 @@ class TestRawHtmlInline:
         assert blk.text == "앞 code 뒤."
         marks = blk.meta.get("inline_marks")
         assert marks == [{"kind": "code", "start": 2, "end": 6}]
+
+
+class TestBreaks:
+    """softbreak(문단 내 단일 줄바꿈)은 공백, hardbreak(명시적)는 줄바꿈."""
+
+    def test_softbreak_becomes_space(self, tmp_path: Path) -> None:
+        # 한 문단을 소스에서 여러 줄로 나눔 → 줄바꿈이 아니라 공백으로 이어짐
+        md = _write(tmp_path, "첫째 줄\n둘째 줄\n셋째 줄.\n")
+        blk = parse_markdown(md)[0]
+        assert blk.text == "첫째 줄 둘째 줄 셋째 줄."
+        assert "\n" not in blk.text
+
+    def test_hardbreak_keeps_newline(self, tmp_path: Path) -> None:
+        # 줄 끝 공백 2개 = 명시적 줄바꿈 → \n 유지
+        md = _write(tmp_path, "첫째 줄  \n둘째 줄.\n")
+        blk = parse_markdown(md)[0]
+        assert blk.text == "첫째 줄\n둘째 줄."
+
+    def test_softbreak_offset_consistent(self, tmp_path: Path) -> None:
+        # softbreak 도 1칸이므로 뒤따르는 마크 offset 이 정확해야 한다
+        md = _write(tmp_path, "앞\n각주[^1] 뒤.\n\n[^1]: 정의.\n")
+        blk = parse_markdown(md)[0]
+        assert blk.text == "앞 각주 뒤."
+        assert blk.meta["footnote_marks"] == [
+            {"kind": "footnote_ref", "offset": 4, "footnote_id": 0}
+        ]

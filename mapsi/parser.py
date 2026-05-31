@@ -761,7 +761,12 @@ def _inline_to_text_and_marks(
                 cursor += len(seg)
                 if idx < len(cite_segs):
                     citation_marks.append({**cite_segs[idx], "offset": cursor})
-        elif ctype in ("softbreak", "hardbreak"):
+        elif ctype == "softbreak":
+            # 문단 내 단일 줄바꿈(소스에서 줄을 나눈 것) → 공백.
+            parts.append(" ")
+            cursor += 1
+        elif ctype == "hardbreak":
+            # 명시적 줄바꿈(줄 끝 공백 2개 또는 백슬래시) → 줄바꿈 유지.
             parts.append("\n")
             cursor += 1
         elif ctype == "footnote_ref":
