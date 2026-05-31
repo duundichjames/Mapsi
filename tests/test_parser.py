@@ -398,6 +398,96 @@ def test_figure_caption_is_not_promoted_by_parser(tmp_path: Path) -> None:
     assert blocks[1] == Block(role="paragraph", text="그림 1. 본문")
 
 
+# ---------------------------------------------------------------------------
+# HTML 그림 패턴 (``::: {.figure} ... :::`` + raw <img> + <p class="caption">)
+# ---------------------------------------------------------------------------
+
+
+def test_html_figure_div_emits_figure_with_caption(tmp_path: Path) -> None:
+    """시험 D 형태가 figure Block + 캡션 흡수로 변환된다.
+
+    캡션 ``<p class="caption">`` 은 무조건 캡션이므로 파싱 시점에 바로
+    ``meta["caption"]`` 으로 채워진다 (그림 캡션 패턴 승격 불필요).
+    """
+    md = _write(
+        tmp_path,
+        '::: {.figure style="text-align: center"}\n'
+        '`<img src="figs/d-1.png" alt="그림 D 캡션" width="100%" />`{=html}\n'
+        '<p class="caption">\n그림 D 캡션\n</p>\n'
+        ":::\n",
+    )
+    blocks = parse_markdown(md)
+    assert len(blocks) == 1
+    blk = blocks[0]
+    assert blk.role == "figure"
+    assert blk.text == "그림 D 캡션"
+    assert blk.meta == {"src": "figs/d-1.png", "caption": "그림 D 캡션"}
+
+
+def test_html_figure_korean_src_is_decoded(tmp_path: Path) -> None:
+    """한글 경로 src(퍼센트 인코딩) 가 디코드되어 파일 조회 경로로 저장된다."""
+    md = _write(
+        tmp_path,
+        "::: {.figure}\n"
+        '`<img src="%ED%95%9C%EA%B8%80/%EA%B7%B8%EB%A6%BC.png" alt="한글" />`{=html}\n'
+        '<p class="caption">한글</p>\n'
+        ":::\n",
+    )
+    blk = parse_markdown(md)[0]
+    assert blk.role == "figure"
+    assert blk.meta["src"] == "한글/그림.png"
+    assert "%" not in blk.meta["src"]
+
+
+def test_html_figure_bare_class_form(tmp_path: Path) -> None:
+    """맨몸 클래스형 ``::: figure`` 도 인식한다."""
+    md = _write(
+        tmp_path,
+        "::: figure\n"
+        '`<img src="x/y.png" alt="alt" />`{=html}\n'
+        '<p class="caption">캡션</p>\n'
+        ":::\n",
+    )
+    blk = parse_markdown(md)[0]
+    assert blk.role == "figure"
+    assert blk.meta == {"src": "x/y.png", "caption": "캡션"}
+
+
+def test_html_figure_without_caption_p_falls_back_to_alt(tmp_path: Path) -> None:
+    """``<p class="caption">`` 이 없으면 alt 를 캡션으로 폴백한다."""
+    md = _write(
+        tmp_path,
+        "::: {.figure}\n"
+        '`<img src="x/y.png" alt="대체텍스트" />`{=html}\n'
+        ":::\n",
+    )
+    blk = parse_markdown(md)[0]
+    assert blk.role == "figure"
+    assert blk.meta == {"src": "x/y.png", "caption": "대체텍스트"}
+
+
+def test_non_figure_div_with_img_is_not_figure(tmp_path: Path) -> None:
+    """``.note`` 등 다른 클래스 div 는 img 가 있어도 figure 가 아니다."""
+    md = _write(
+        tmp_path,
+        "::: {.note}\n"
+        '`<img src="x/y.png" alt="a" />`{=html}\n'
+        ":::\n",
+    )
+    blocks = parse_markdown(md)
+    assert all(b.role != "figure" for b in blocks)
+
+
+def test_figure_div_without_img_is_not_figure(tmp_path: Path) -> None:
+    """``<img>`` 가 없는 figure div 는 figure 로 변환되지 않는다."""
+    md = _write(
+        tmp_path,
+        "::: {.figure}\n그냥 텍스트 내용\n:::\n",
+    )
+    blocks = parse_markdown(md)
+    assert all(b.role != "figure" for b in blocks)
+
+
 def test_round_trip_02_bullet_list_fixture(repo_root: Path) -> None:
     """``tests/golden/02_bullet_list/input.md`` 가 의도한 6 블록을 만든다."""
     md = repo_root / "tests" / "golden" / "02_bullet_list" / "input.md"
