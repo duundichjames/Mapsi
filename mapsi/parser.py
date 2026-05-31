@@ -304,6 +304,29 @@ def _tokens_to_blocks(tokens: list[Token]) -> list[Block]:
 
         if tok.type == "paragraph_open":
             inline = tokens[i + 1]
+            html_figure = _extract_html_figure(inline)
+            if html_figure is not None and blockquote_depth == 0 and not list_stack:
+                src, alt = html_figure
+                # 캡션 lookahead: paragraph_close(i+2) 다음 토큰(i+3) 이
+                # <p class="caption"> html_block 이면 캡션으로 흡수·소비한다.
+                advance = 3
+                caption: str | None = None
+                nxt = tokens[i + 3] if i + 3 < n else None
+                if nxt is not None and nxt.type == "html_block":
+                    caption = _extract_caption_html_block(nxt.content or "")
+                    if caption is not None:
+                        advance = 4
+                if caption is None:
+                    caption = alt or None  # <p> 캡션 없으면 alt 로 폴백
+                blocks.append(
+                    Block(
+                        role="figure",
+                        text=alt,
+                        meta={"src": src, "caption": caption},
+                    )
+                )
+                i += advance
+                continue
             figure = _extract_solo_figure(inline)
             if figure is not None and blockquote_depth == 0 and not list_stack:
                 src, alt = figure
@@ -648,6 +671,98 @@ def _first_inline_in_item(
             return _inline_to_text_and_marks(t)
         j += 1
     return "", [], [], [], []
+
+
+# ---------------------------------------------------------------------------
+# HTML 그림 패턴 (Pandoc/R Markdown 의 ``::: {.figure} ... :::`` + raw <img>)
+# ---------------------------------------------------------------------------
+
+_FIGURE_DIV_OPEN_RE = re.compile(
+    r"""^:::+\s*(?:\{[^}]*\.figure\b[^}]*\}|figure\b)"""
+)
+"""fenced-div 여는 마커가 ``.figure`` 클래스인지 판정.
+
+``::: {.figure style="..."}`` (중괄호 속성형) 과 ``::: figure`` (맨몸 클래스형)
+을 모두 매치한다. ``::: {.note}`` 등 다른 클래스, 닫는 ``:::`` 단독은 매치되지
+않는다.
+"""
+
+_IMG_ATTR_RE = re.compile(r"""(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+"""raw ``<img ...>`` 평문에서 ``name="value"`` / ``name='value'`` 속성 추출."""
+
+_CAPTION_P_RE = re.compile(
+    r"""<p\b[^>]*\bclass\s*=\s*["']caption["'][^>]*>(.*?)</p>""",
+    re.DOTALL | re.IGNORECASE,
+)
+"""``<p class="caption">캡션</p>`` 블록에서 캡션 본문 추출 (멀티라인 허용)."""
+
+
+def _img_attrs(content: str) -> dict[str, str]:
+    """raw ``<img ...>`` 문자열의 속성을 ``{name: value}`` 딕셔너리로 파싱한다."""
+    attrs: dict[str, str] = {}
+    for m in _IMG_ATTR_RE.finditer(content):
+        attrs[m.group(1).lower()] = m.group(2) if m.group(2) is not None else (m.group(3) or "")
+    return attrs
+
+
+def _extract_html_figure(inline_tok: Token) -> tuple[str, str] | None:
+    """inline 토큰이 "HTML 그림 단락" 인지 판정하고 (디코드된 src, alt) 를 반환한다.
+
+    R Markdown(Pandoc) 산출물의 ``::: {.figure ...}`` fenced div 는 commonmark
+    파서에서 별도 토큰이 되지 못하고, 여는 마커 줄(``text``) + softbreak +
+    raw ``<img>``(``code_inline``) + ``{=html}``(``text``) 가 한 paragraph 의
+    inline 자식으로 뭉쳐 들어온다. 본 헬퍼는 그 패턴을 인식한다.
+
+    판정 조건 (모두 만족):
+      - ``inline_tok.type == "inline"`` 이고 자식이 있음
+      - 첫 ``text`` 자식이 ``:::`` 로 시작하고 ``.figure`` 클래스를 가짐
+        (:data:`_FIGURE_DIV_OPEN_RE`)
+      - 자식 중 ``code_inline`` 의 content 가 ``<img`` 로 시작하고, 그 바로
+        다음 자식이 ``{=html}`` 로 시작하는 ``text``
+      - ``<img>`` 에서 추출한 ``src`` 가 비어있지 않음
+
+    ``src`` 는 :func:`_extract_solo_figure` 와 동일하게 ``urllib.parse.unquote``
+    로 디코드한다 (한글/공백 경로 일관성). ``alt`` 는 img 속성에서 그대로 취한다.
+
+    매치 실패 시 ``None`` → 호출처가 일반 처리로 폴백. ``.note`` 등 다른 클래스나
+    ``<img>`` 가 없는 figure div 는 그림이 아니므로 ``None``.
+    """
+    if inline_tok.type != "inline" or not inline_tok.children:
+        return None
+    children = inline_tok.children
+    first = children[0]
+    if first.type != "text" or not _FIGURE_DIV_OPEN_RE.match(first.content or ""):
+        return None
+    for idx, child in enumerate(children):
+        if child.type != "code_inline":
+            continue
+        content = (child.content or "").lstrip()
+        if not content.startswith("<img"):
+            continue
+        nxt = children[idx + 1] if idx + 1 < len(children) else None
+        if nxt is None or nxt.type != "text" or not (nxt.content or "").startswith("{=html}"):
+            continue
+        attrs = _img_attrs(content)
+        src = urllib.parse.unquote((attrs.get("src") or "").strip())
+        if not src:
+            return None
+        alt = attrs.get("alt", "")
+        return src, alt
+    return None
+
+
+def _extract_caption_html_block(content: str) -> str | None:
+    """html_block content 에서 ``<p class="caption">`` 캡션 텍스트를 뽑는다.
+
+    HTML 그림의 캡션 ``<p class="caption">캡션</p>`` 은 닫는 ``:::`` 와 함께
+    하나의 ``html_block`` 토큰으로 들어온다. 캡션 ``<p>`` 가 있으면 그 본문을
+    공백 정리해 반환하고, 없으면 ``None`` (호출처가 alt 로 폴백).
+    """
+    m = _CAPTION_P_RE.search(content or "")
+    if not m:
+        return None
+    caption = " ".join(m.group(1).split()).strip()
+    return caption or None
 
 
 def _extract_solo_figure(inline_tok: Token) -> tuple[str, str] | None:
